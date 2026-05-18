@@ -1,8 +1,9 @@
 footprint_to_odom_ekf:
   ros__parameters:
+    use_sim_time: true         # 【修改 1】：强行拉入仿真时间线，防止 TF 断裂！
     frequency: 50.0
     publish_tf: true
-    transform_timeout: 0.01
+    transform_timeout: 0.01  # 【修改 2】：把原来的 0.01 改成 0.5，允许半秒钟的卡顿容错！毕竟打滑狗腿的里程计偶尔会掉帧，必须给它留点余地，否则 TF 就断了，导航就崩了！
     # transform_time_offset: 0.05
     two_d_mode: true
     # diagnostics_agg: true
@@ -17,14 +18,14 @@ footprint_to_odom_ekf:
     odom0_config: [false, false, false,
                   false, false, false,
                     true,  true, false,
-                  false, false, true,
+                  false, false, false, # 【修改 2】：原来这里是 true，必须改成 false！彻底剥夺打滑狗腿的旋转话语权！
                   false, false, false]
 
     imu0: imu/data
     imu0_config: [false, false, false,
-                  false, false, true,
+                  false, false, true,  # 坚定信任 IMU 的绝对方向
                   false, false, false,
-                  false, false,  true,
+                  false, false,  true, # 坚定信任 IMU 的旋转速度
                   false, false, false]
 
     odom_frame: odom

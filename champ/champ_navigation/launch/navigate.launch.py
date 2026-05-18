@@ -29,7 +29,7 @@ def generate_launch_description():
     )
 
     rviz_config_path = PathJoinSubstitution(
-        [FindPackageShare('champ_navigation'), 'rviz', 'navigation.rviz']
+        [FindPackageShare('champ_navigation'), 'rviz', 'navigation_optimized.rviz']
     )
 
     return LaunchDescription([

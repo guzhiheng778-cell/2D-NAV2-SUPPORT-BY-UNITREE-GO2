@@ -179,7 +179,7 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_link
-      use_sim_time: False
+      use_sim_time: True #// 之前是 False，改成 True 以配合整个系统的仿真时间
       rolling_window: true
       width: 3
       height: 3
@@ -244,10 +244,10 @@ local_costmap:
       always_send_full_costmap: True
   local_costmap_client:
     ros__parameters:
-      use_sim_time: False
+      use_sim_time: True #// 之前是 False，改成 True 以配合整个系统的仿真时间
   local_costmap_rclcpp_node:
     ros__parameters:
-      use_sim_time: False
+      use_sim_time: True #// 之前是 False，改成 True 以配合整个系统的仿真时间
 
 global_costmap:
   global_costmap:
@@ -256,7 +256,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      use_sim_time: False
+      use_sim_time: True #// 之前是 False，改成 True 以配合整个系统的仿真时间
       robot_radius: 0.22
       resolution: 0.05
       track_unknown_space: true
@@ -314,10 +314,10 @@ global_costmap:
       always_send_full_costmap: True
   global_costmap_client:
     ros__parameters:
-      use_sim_time: False
+      use_sim_time: True #// 之前是 False，改成 True 以配合整个系统的仿真时间
   global_costmap_rclcpp_node:
     ros__parameters:
-      use_sim_time: False
+      use_sim_time: True #// 之前是 False，改成 True 以配合整个系统的仿真时间
 
 map_server:
   ros__parameters:
@@ -362,7 +362,7 @@ recoveries_server:
     global_frame: odom
     robot_base_frame: base_link
     transform_timeout: 0.1
-    use_sim_time: true
+    use_sim_time: True #// 之前是 False，改成 True 以配合整个系统的仿真时间
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4

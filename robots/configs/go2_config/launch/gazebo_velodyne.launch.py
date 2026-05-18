@@ -3,6 +3,7 @@ import os
 import launch_ros
 from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import Node
+from launch_ros.actions import SetParameter
 
 from launch import LaunchDescription
 from launch.actions import (
@@ -34,7 +35,7 @@ def generate_launch_description():
     gait_config = os.path.join(config_pkg_share, "config/gait/gait.yaml")
     links_config = os.path.join(config_pkg_share, "config/links/links.yaml")
     default_model_path = os.path.join(descr_pkg_share, "xacro/robot_VLP.xacro")
-    default_world_path = os.path.join(config_pkg_share, "worlds/default.world")
+    default_world_path = os.path.join(config_pkg_share, "worlds/outdoor.world")
 
     declare_use_sim_time = DeclareLaunchArgument(
         "use_sim_time",
@@ -119,6 +120,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            
             declare_use_sim_time,
             declare_rviz,
             declare_robot_name,
@@ -130,6 +132,7 @@ def generate_launch_description():
             declare_world_init_y,
             declare_world_init_z,
             declare_world_init_heading,
+            SetParameter(name='use_sim_time', value=LaunchConfiguration('use_sim_time')),
             bringup_ld,
             gazebo_ld
 

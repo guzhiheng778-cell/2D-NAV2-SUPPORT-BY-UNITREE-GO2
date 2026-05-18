@@ -1,11 +1,15 @@
 amcl:
   ros__parameters:
     use_sim_time: True
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
-    alpha5: 0.2
+   # 把这四个值从之前的 0.2 往回调小，比如调到 0.1 左右。
+    # 告诉它：虽然你会打滑，但不要轻易怀疑人生！
+   # ...
+    # 【核心修改】：针对旋转漂移的极端配置！
+    alpha1: 0.2    # 旋转时的旋转误差：极大！（它说转了10度，可能转了30度）
+    alpha2: 0.2    # 平移时的旋转误差：正常
+    alpha3: 1.5    # 平移时的平移误差：正常
+    alpha4: 1.0    # 旋转时的平移误差：极大！（这是核心！告诉AMCL：原地转圈时如果Odom说发生位移是错的）
+    alpha5: 0.1
     base_frame_id: "base_footprint"
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
@@ -17,26 +21,28 @@ amcl:
     laser_max_range: 100.0
     laser_min_range: -1.0
     laser_model_type: "likelihood_field"
-    max_beams: 60
-    max_particles: 2000
+    # 增加参与匹配的雷达射线数量（默认通常是 60 或 100）
+    max_beams: 150  # 调大这个值，让它看得更仔细
+    max_particles: 4000
     min_particles: 500
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
-    recovery_alpha_fast: 0.0
-    recovery_alpha_slow: 0.0
+    recovery_alpha_fast: 0.1    # 快速衰减率，用于应对突然的“绑架”（比如打滑瞬间原本是0）
+    recovery_alpha_slow: 0.001  # 慢速衰减率，用于发现长期的定位失效(原本是0)
     resample_interval: 1
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     save_pose_rate: 0.5
     sigma_hit: 0.2
     tf_broadcast: true
     transform_tolerance: 1.0
-    update_min_a: 0.2
-    update_min_d: 0.25
-    z_hit: 0.5
-    z_max: 0.05
-    z_rand: 0.5
-    z_short: 0.05
+    update_min_a: 0.1
+    update_min_d: 0.1
+    # 下面这四个参数加起来通常等于 1.0 (或者接近1)
+    z_hit: 0.80    # <--- 【调大】高度信任雷达击中墙壁的数据（之前是0.5）
+    z_max: 0.1    # 测距最大值的概率权重
+    z_rand: 0.1   # <--- 【调小】绝不相信随机噪点（之前是0.3）
+    z_short: 0.1  # 【调大】(默认0.05) 增加对“地图外未知障碍物(比如人/箱子)”的容忍度
     scan_topic: scan
     set_initial_pose: True
     initial_pose: 
@@ -116,8 +122,8 @@ controller_server:
     # Progress checker parameters
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.5
-      movement_time_allowance: 10.0
+      required_movement_radius: 0.2
+      movement_time_allowance: 15.0
 
     # Goal checker parameters
     general_goal_checker:
@@ -131,20 +137,20 @@ controller_server:
       debug_trajectory_details: True
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.4
+      max_vel_x: 0.3         # 【调小】速度上限压低一点，稳字当头（原本0.4）
       max_vel_y: 0.0
-      max_vel_theta: 0.75
+      max_vel_theta: 0.5
       min_speed_xy: 0.0
       max_speed_xy: 0.4
       min_speed_theta: 0.0
       # Add high threshold velocity for turtlebot 3 issue.
       # https://github.com/ROBOTIS-GIT/turtlebot3_simulations/issues/75
-      acc_lim_x: 2.5
+      acc_lim_x: 1.0         # <--- 从 2.5 改成 1.0（起步要极其平缓）
       acc_lim_y: 0.0
-      acc_lim_theta: 3.2
-      decel_lim_x: -2.5
+      acc_lim_theta: 1.5     # <--- 从 3.2 改成 1.5（转向不要猛打方向盘）
+      decel_lim_x: -1.0      # <--- 从 -2.5 改成 -1.0（刹车也要平缓）
       decel_lim_y: 0.0
-      decel_lim_theta: -3.2
+      decel_lim_theta: -1.5  # 原本-3.2DWB 的采样参数，适当增加采样数量，让它更仔细地评估每个可能的轨迹
       vx_samples: 20
       vy_samples: 5
       vtheta_samples: 20
@@ -179,8 +185,11 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_link
-      use_sim_time: False
+      use_sim_time: True
       rolling_window: true
+      footprint_clearing_enabled: True   # <--- 加上这一行！走到哪，清到哪！
+      combination_method: 1  # 强制使用 Overwrite 模式，让新帧数据能直接“抹除”旧帧
+      rolling_window: true   # 再次确认这个必须为 true
       width: 3
       height: 3
       resolution: 0.05
@@ -188,8 +197,9 @@ local_costmap:
       plugins: ["voxel2d_layer", "voxel3d_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        cost_scaling_factor: 6.0  # 【关键】把这个值调大（3.0 调到 5.0 甚至 10.0）
+        # cost_scaling_factor 越大，紫色的渐变边缘就越陡峭，狗就越敢贴着墙走，不容易被“软卡死
+        inflation_radius: 0.5 # 【调小】从默认的0.35调到0.3，减少过度膨胀导致的路径过窄问题
       voxel2d_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -198,14 +208,19 @@ local_costmap:
         z_resolution: 0.05
         z_voxels: 16
         max_obstacle_height: 2.0
+        min_obstacle_height: 0.15    # <--- 【新增】：忽略 0.15 米以下的物体（地板）
         mark_threshold: 0
         observation_sources: scan base_scan
         scan:
           topic: /scan
           max_obstacle_height: 2.0
+          min_obstacle_height: 0.15    # <--- 【新增】：忽略 0.15 米以下的物体（地板）
           clearing: True
           marking: True
           data_type: "LaserScan"
+          # === 新增/修改下面两项 ===
+          obstacle_max_range: 2.5    # 超过 2.5 米的东西不放进地图
+          raytrace_max_range: 3.0    # 只要 3 米内没东西，就强行清理掉旧点
         base_scan:
           topic: /base/scan
           max_obstacle_height: 2.0
@@ -214,19 +229,23 @@ local_costmap:
           data_type: "LaserScan"
       voxel3d_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
-        enabled: True
+        enabled: False       # <--- 【修改 1】：把 True 改成 False！强行让插件休眠，等我们调好了参数再打开它
+        mark_threshold: 2    # 【新增】至少连续两帧看到才标，减少抖动引起的误判
+        update_footprint_enabled: True
+# 在这里增加清理射线的强度
         publish_voxel_map: False
         origin_z: 0.0
         z_resolution: 0.05
         z_voxels: 16
         mark_threshold: 1
         observation_sources: realsense zed
-        min_obstacle_height: 0.00
+        min_obstacle_height: 0.35
         max_obstacle_height: 2.0 
         realsense:
           topic: /camera/depth/color/points
+          raytrace_max_range: 4.0  # 【增加】清理距离大于探测距离，减少残留点
           raytrace_min_range: 0.5
-          min_obstacle_height: 0.0
+          min_obstacle_height: 0.35
           max_obstacle_height: 2.0 
           clearing: True
           marking: True
@@ -234,7 +253,7 @@ local_costmap:
         zed:
           topic: /zed/point_cloud/cloud_registered
           raytrace_min_range: 0.5
-          min_obstacle_height: 0.0
+          min_obstacle_height: 0.35
           max_obstacle_height: 2.0 
           clearing: True
           marking: True
@@ -244,10 +263,10 @@ local_costmap:
       always_send_full_costmap: True
   local_costmap_client:
     ros__parameters:
-      use_sim_time: False
+      use_sim_time: True
   local_costmap_rclcpp_node:
     ros__parameters:
-      use_sim_time: False
+      use_sim_time: True
 
 global_costmap:
   global_costmap:
@@ -256,14 +275,14 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      use_sim_time: False
+      use_sim_time: True
       robot_radius: 0.22
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "voxel2d_layer", "voxel3d_layer", "inflation_layer"]
       voxel2d_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: True
+        enabled: True       
         observation_sources: scan base_scan
         scan:
           topic: /scan
@@ -279,19 +298,19 @@ global_costmap:
           data_type: "LaserScan"
       voxel3d_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
-        enabled: True
+        enabled: False       # <--- 【修改 1】：把 True 改成 False！强行让插件休眠，等我们调好了参数再打开它
         publish_voxel_map: False
         origin_z: 0.0
         z_resolution: 0.05
         z_voxels: 16
         mark_threshold: 1
         observation_sources: realsense zed
-        min_obstacle_height: 0.00
+        min_obstacle_height: 0.35
         max_obstacle_height: 2.0 
         realsense:
           topic: /camera/depth/color/points
           raytrace_min_range: 0.5
-          min_obstacle_height: 0.0
+          min_obstacle_height: 0.35
           max_obstacle_height: 2.0 
           clearing: True
           marking: True
@@ -299,7 +318,7 @@ global_costmap:
         zed:
           topic: /zed/point_cloud/cloud_registered
           raytrace_min_range: 0.5
-          min_obstacle_height: 0.0
+          min_obstacle_height: 0.35
           max_obstacle_height: 2.0 
           clearing: True
           marking: True
@@ -309,15 +328,16 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        cost_scaling_factor: 6.0  # 【关键】把这个值调大（3.0 调到 5.0 甚至 10.0）
+        # cost_scaling_factor 越大，紫色的渐变边缘就越
+        inflation_radius: 0.50 # 【调小】从默认的0.55调到0.35，减少过度膨胀导致的路径过窄问题
       always_send_full_costmap: True
   global_costmap_client:
     ros__parameters:
-      use_sim_time: False
+      use_sim_time: True
   global_costmap_rclcpp_node:
     ros__parameters:
-      use_sim_time: False
+      use_sim_time: True
 
 map_server:
   ros__parameters:

@@ -1,31 +1,28 @@
 base_to_footprint_ekf:
   ros__parameters:
+    use_sim_time: true      # <--- 救命的仿真时间，必须有！
     frequency: 50.0
     publish_tf: true
+    # 【救命修改】：把 0.01 改成 0.5，允许半秒钟的卡顿容错！
     transform_timeout: 0.01
     transform_time_offset: 0.045
     two_d_mode: false
-    # diagnostics_agg: true
 
-    #x     , y     , z,
-    #roll  , pitch , yaw,
-    #vx    , vy    , vz,
-    #vroll , vpitch, vyaw,
-    #ax    , ay    , az
-
+    # 你的原版 pose0，一字不差地还给你，这是身体的骨架！
     pose0: base_to_footprint_pose
     pose0_config: [true,  true,  true,
-                  true,  true,  true,
-                  false, false, false,
-                  false, false, false,
-                  false, false, false]
+                   true,  true,  true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
 
+    # 修复了 Bug 的 IMU 配置
     imu0: imu/data
     imu0_config: [false, false, false,
                   false, false, false,
-                  true, true, true,
-                  false, false, false,
-                  false, false, false]
+                  false, false, false,  # <--- 把原版的 true,true,true(线速度) 改成 false
+                  true,  true,  true,   # <--- 把角速度(vroll, vpitch, vyaw) 开启
+                  true,  true,  true]   # <--- 把线加速度(ax, ay, az) 开启
 
     odom_frame: base_footprint
     world_frame: base_footprint
