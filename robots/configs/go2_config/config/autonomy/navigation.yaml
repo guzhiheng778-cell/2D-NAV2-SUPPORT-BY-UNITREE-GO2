@@ -63,7 +63,7 @@ bt_navigator:
   ros__parameters:
     use_sim_time: True
     global_frame: map
-    robot_base_frame: base_link
+    robot_base_frame: base_footprint
     odom_topic: /odom
     bt_loop_duration: 10
     default_server_timeout: 20
@@ -112,7 +112,7 @@ controller_server:
     use_sim_time: True
     controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5
+    min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugin: "progress_checker"
@@ -159,11 +159,11 @@ controller_server:
       angular_granularity: 0.025
       transform_tolerance: 0.2
       xy_goal_tolerance: 0.25
-      trans_stopped_velocity: 0.25
+      trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: True
       stateful: True
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
+      BaseObstacle.scale: 0.10
       PathAlign.scale: 32.0
       PathAlign.forward_point_distance: 0.1
       GoalAlign.scale: 24.0
@@ -184,7 +184,7 @@ local_costmap:
       update_frequency: 5.0
       publish_frequency: 2.0
       global_frame: odom
-      robot_base_frame: base_link
+      robot_base_frame: base_footprint
       use_sim_time: True
       rolling_window: true
       footprint_clearing_enabled: True   # <--- 加上这一行！走到哪，清到哪！
@@ -194,23 +194,16 @@ local_costmap:
       height: 3
       resolution: 0.05
       robot_radius: 0.22
-      plugins: ["voxel2d_layer", "voxel3d_layer", "inflation_layer"]
+      plugins: ["obstacle_layer", "velodyne_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 6.0  # 【关键】把这个值调大（3.0 调到 5.0 甚至 10.0）
         # cost_scaling_factor 越大，紫色的渐变边缘就越陡峭，狗就越敢贴着墙走，不容易被“软卡死
         inflation_radius: 0.5 # 【调小】从默认的0.35调到0.3，减少过度膨胀导致的路径过窄问题
-      voxel2d_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        publish_voxel_map: False
-        origin_z: 0.0
-        z_resolution: 0.05
-        z_voxels: 16
-        max_obstacle_height: 2.0
-        min_obstacle_height: 0.15    # <--- 【新增】：忽略 0.15 米以下的物体（地板）
-        mark_threshold: 0
-        observation_sources: scan base_scan
+        observation_sources: scan
         scan:
           topic: /scan
           max_obstacle_height: 2.0
@@ -221,40 +214,24 @@ local_costmap:
           # === 新增/修改下面两项 ===
           obstacle_max_range: 2.5    # 超过 2.5 米的东西不放进地图
           raytrace_max_range: 3.0    # 只要 3 米内没东西，就强行清理掉旧点
-        base_scan:
-          topic: /base/scan
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "LaserScan"
-      voxel3d_layer:
+      velodyne_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
-        enabled: False       # <--- 【修改 1】：把 True 改成 False！强行让插件休眠，等我们调好了参数再打开它
-        mark_threshold: 2    # 【新增】至少连续两帧看到才标，减少抖动引起的误判
-        update_footprint_enabled: True
-# 在这里增加清理射线的强度
+        enabled: True
         publish_voxel_map: False
-        origin_z: 0.0
+        origin_z: -0.10
         z_resolution: 0.05
         z_voxels: 16
         mark_threshold: 1
-        observation_sources: realsense zed
-        min_obstacle_height: 0.35
-        max_obstacle_height: 2.0 
-        realsense:
-          topic: /camera/depth/color/points
-          raytrace_max_range: 4.0  # 【增加】清理距离大于探测距离，减少残留点
-          raytrace_min_range: 0.5
-          min_obstacle_height: 0.35
-          max_obstacle_height: 2.0 
-          clearing: True
-          marking: True
-          data_type: "PointCloud2"
-        zed:
-          topic: /zed/point_cloud/cloud_registered
-          raytrace_min_range: 0.5
-          min_obstacle_height: 0.35
-          max_obstacle_height: 2.0 
+        observation_sources: velodyne
+        footprint_clearing_enabled: True
+        velodyne:
+          topic: /velodyne_points
+          max_obstacle_height: 2.0
+          min_obstacle_height: 0.18
+          obstacle_max_range: 6.0
+          obstacle_min_range: 0.35
+          raytrace_max_range: 7.0
+          raytrace_min_range: 0.35
           clearing: True
           marking: True
           data_type: "PointCloud2"
@@ -274,55 +251,22 @@ global_costmap:
       update_frequency: 5.0
       publish_frequency: 1.0
       global_frame: map
-      robot_base_frame: base_link
+      robot_base_frame: base_footprint
       use_sim_time: True
       robot_radius: 0.22
       resolution: 0.05
       track_unknown_space: true
-      plugins: ["static_layer", "voxel2d_layer", "voxel3d_layer", "inflation_layer"]
-      voxel2d_layer:
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True       
-        observation_sources: scan base_scan
+        observation_sources: scan
         scan:
           topic: /scan
           max_obstacle_height: 2.0
           clearing: True
           marking: True
           data_type: "LaserScan"
-        base_scan:
-          topic: /base/scan
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "LaserScan"
-      voxel3d_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
-        enabled: False       # <--- 【修改 1】：把 True 改成 False！强行让插件休眠，等我们调好了参数再打开它
-        publish_voxel_map: False
-        origin_z: 0.0
-        z_resolution: 0.05
-        z_voxels: 16
-        mark_threshold: 1
-        observation_sources: realsense zed
-        min_obstacle_height: 0.35
-        max_obstacle_height: 2.0 
-        realsense:
-          topic: /camera/depth/color/points
-          raytrace_min_range: 0.5
-          min_obstacle_height: 0.35
-          max_obstacle_height: 2.0 
-          clearing: True
-          marking: True
-          data_type: "PointCloud2"
-        zed:
-          topic: /zed/point_cloud/cloud_registered
-          raytrace_min_range: 0.5
-          min_obstacle_height: 0.35
-          max_obstacle_height: 2.0 
-          clearing: True
-          marking: True
-          data_type: "PointCloud2"
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -342,7 +286,7 @@ global_costmap:
 map_server:
   ros__parameters:
     use_sim_time: True
-    yaml_filename: "map.yaml"
+    yaml_filename: "playground.yaml"
 
 map_saver:
   ros__parameters:
@@ -380,7 +324,7 @@ recoveries_server:
     wait:
       plugin: "nav2_recoveries/Wait"
     global_frame: odom
-    robot_base_frame: base_link
+    robot_base_frame: base_footprint
     transform_timeout: 0.1
     use_sim_time: true
     simulate_ahead_time: 2.0

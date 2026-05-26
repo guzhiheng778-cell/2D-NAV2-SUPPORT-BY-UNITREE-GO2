@@ -24,7 +24,7 @@ def generate_launch_description():
     this_package = FindPackageShare('go2_config')
 
     default_map_path = PathJoinSubstitution(
-        [this_package, 'maps', 'map.yaml']
+        [this_package, 'maps', 'playground.yaml']
     )
 
     default_params_file_path = PathJoinSubstitution(
@@ -50,7 +50,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             name='sim', 
-            default_value='false',
+            default_value='true',
             description='Enable use_sime_time to true'
         ),
 
