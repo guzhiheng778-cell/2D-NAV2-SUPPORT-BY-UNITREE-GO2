@@ -14,6 +14,7 @@ from nav_msgs.msg import Odometry, Path
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
+from std_msgs.msg import Bool
 
 
 @dataclass
@@ -52,6 +53,8 @@ class PatrolManager(Node):
         self.declare_parameter("robot_pose_topic", "/amcl_pose")
         self.declare_parameter("trajectory_topic", "/patrol/trajectory")
         self.declare_parameter("trajectory_output_file", "/tmp/go2_patrol_trajectory.csv")
+        self.declare_parameter("source_seek_active_topic", "/source_seek/active")
+        self.declare_parameter("pause_on_source_seek", True)
 
         self.loop = self.get_parameter("loop").value
         self.wait_time_sec = float(self.get_parameter("wait_time_sec").value)
@@ -65,6 +68,8 @@ class PatrolManager(Node):
         robot_pose_topic = self.get_parameter("robot_pose_topic").value
         trajectory_topic = self.get_parameter("trajectory_topic").value
         self.trajectory_output_file = self.get_parameter("trajectory_output_file").value
+        source_seek_active_topic = self.get_parameter("source_seek_active_topic").value
+        self.pause_on_source_seek = bool(self.get_parameter("pause_on_source_seek").value)
 
         self.points = self._load_patrol_points()
         self.current_index = 0
@@ -78,6 +83,8 @@ class PatrolManager(Node):
         self.latest_pose_y = None
         self.latest_pose_yaw = None
         self.active_goal_retry_count = 0
+        self.source_seek_active = False
+        self.current_goal_handle = None
 
         self.path_msg = Path()
         self.path_msg.header.frame_id = self.goal_frame
@@ -86,6 +93,9 @@ class PatrolManager(Node):
         self.pose_sub = self.create_subscription(
             PoseWithCovarianceStamped, robot_pose_topic, self._pose_callback, 10
         )#只要这个话题收到新消息，就自动调用 self._pose_callback(msg)。
+        self.source_seek_sub = self.create_subscription(
+            Bool, source_seek_active_topic, self._source_seek_active_callback, 10
+        )
         self.action_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
 
         self._init_trajectory_file()
@@ -163,6 +173,9 @@ class PatrolManager(Node):
             ])
 
     def _tick(self):
+        if self.pause_on_source_seek and self.source_seek_active:
+            return
+
         if self.goal_in_progress:
             if self.goal_sent_time is None:
                 return
@@ -225,6 +238,7 @@ class PatrolManager(Node):
             self._advance_point()
             return
 
+        self.current_goal_handle = goal_handle
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._goal_result_callback)
 
@@ -242,6 +256,7 @@ class PatrolManager(Node):
             self.get_logger().warn(f"Goal '{self.active_goal_name}' finished with status {status}")
             self._advance_point()
         self.goal_in_progress = False
+        self.current_goal_handle = None
 
     def _verify_reached_then_advance(self):
         point = self.points[self.current_index]
@@ -294,6 +309,24 @@ class PatrolManager(Node):
         self.active_goal_name = ""
         self.goal_sent_time = None
         self.active_goal_retry_count = 0
+        self.current_goal_handle = None
+
+    def _source_seek_active_callback(self, msg: Bool):
+        was_active = self.source_seek_active
+        self.source_seek_active = msg.data
+        if not self.pause_on_source_seek:
+            return
+
+        if self.source_seek_active and not was_active:
+            self.get_logger().info("Source seeking active, pausing patrol")
+            if self.current_goal_handle is not None:
+                self.current_goal_handle.cancel_goal_async()
+            self.goal_in_progress = False
+            self.wait_until = None
+            self.goal_sent_time = None
+            self.current_goal_handle = None
+        elif not self.source_seek_active and was_active:
+            self.get_logger().info("Source seeking inactive, resuming patrol")
 
 
 def main(args=None):

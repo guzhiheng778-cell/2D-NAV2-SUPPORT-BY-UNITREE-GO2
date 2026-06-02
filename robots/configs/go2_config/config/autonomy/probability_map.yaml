@@ -8,6 +8,7 @@ probability_map:
     entropy_topic: /entropy
     pmax_topic: /pmax
     source_estimate_topic: /source_estimate
+    source_estimate_top_k: 80
     marker_topic: /probability/markers
     csv_output_file: /tmp/go2_probability_metrics.csv
     map_min_x: -10.0

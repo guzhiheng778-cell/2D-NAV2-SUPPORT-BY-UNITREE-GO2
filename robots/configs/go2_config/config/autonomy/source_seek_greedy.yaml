@@ -1,0 +1,16 @@
+source_seek_greedy:
+  ros__parameters:
+    pmax_topic: /pmax
+    source_estimate_topic: /source_estimate
+    robot_pose_topic: /amcl_pose
+    odom_topic: /odom
+    status_topic: /source_seek/status
+    active_topic: /source_seek/active
+    goal_frame: map
+    control_rate_hz: 10.0
+    pmax_activate_threshold: 0.002
+    pmax_deactivate_threshold: 0.0007
+    goal_tolerance: 0.35
+    min_goal_update_distance: 0.50
+    min_goal_update_period_sec: 5.0
+    goal_timeout_sec: 120.0

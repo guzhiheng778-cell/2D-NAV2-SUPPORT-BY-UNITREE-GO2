@@ -17,8 +17,8 @@ odor_simulator:
     concentration_topic: /odor_concentration
     detection_topic: /odor_detection
     marker_topic: /odor/markers
-    source_x: -2.0
-    source_y: 0.5
+    source_x: -3.5
+    source_y: 2.0
     source_z: 0.2
     release_rate: 8.0
     plume_sigma_y_base: 0.20

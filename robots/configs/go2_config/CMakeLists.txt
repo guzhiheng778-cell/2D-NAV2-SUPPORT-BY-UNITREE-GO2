@@ -8,6 +8,7 @@ install(
     scripts/odor_simulator_node.py
     scripts/patrol_manager_node.py
     scripts/probability_map_node.py
+    scripts/source_seek_greedy_node.py
     scripts/wind_simulator_node.py
   DESTINATION lib/${PROJECT_NAME}
 )

@@ -9,12 +9,20 @@ def generate_launch_description():
     default_points_file = PathJoinSubstitution(
         [FindPackageShare("go2_config"), "config/autonomy", "patrol_points.yaml"]
     )
+    default_source_seek_params_file = PathJoinSubstitution(
+        [FindPackageShare("go2_config"), "config/autonomy", "source_seek_greedy.yaml"]
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument(
             "points_file",
             default_value=default_points_file,
             description="YAML file containing patrol manager parameters and points",
+        ),
+        DeclareLaunchArgument(
+            "source_seek_params_file",
+            default_value=default_source_seek_params_file,
+            description="YAML file containing greedy source seeking parameters",
         ),
         DeclareLaunchArgument(
             "use_sim_time",
@@ -53,6 +61,16 @@ def generate_launch_description():
                 {"goal_verify_tolerance": LaunchConfiguration("goal_verify_tolerance")},
                 {"goal_verify_yaw_tolerance": LaunchConfiguration("goal_verify_yaw_tolerance")},
                 {"max_goal_retries": LaunchConfiguration("max_goal_retries")},
+            ],
+        ),
+        Node(
+            package="go2_config",
+            executable="source_seek_greedy_node.py",
+            name="source_seek_greedy",
+            output="screen",
+            parameters=[
+                LaunchConfiguration("source_seek_params_file"),
+                {"use_sim_time": LaunchConfiguration("use_sim_time")},
             ],
         ),
     ])

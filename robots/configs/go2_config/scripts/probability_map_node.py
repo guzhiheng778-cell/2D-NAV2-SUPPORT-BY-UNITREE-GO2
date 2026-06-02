@@ -25,6 +25,7 @@ class ProbabilityMap(Node):
         self.declare_parameter("entropy_topic", "/entropy")
         self.declare_parameter("pmax_topic", "/pmax")
         self.declare_parameter("source_estimate_topic", "/source_estimate")
+        self.declare_parameter("source_estimate_top_k", 80)
         self.declare_parameter("marker_topic", "/probability/markers")
         self.declare_parameter("csv_output_file", "/tmp/go2_probability_metrics.csv")
         self.declare_parameter("map_min_x", -10.0)
@@ -69,6 +70,7 @@ class ProbabilityMap(Node):
             1e-3, float(self.get_parameter("likelihood_temperature").value)
         )
         self.csv_output_file = self.get_parameter("csv_output_file").value
+        self.source_estimate_top_k = max(1, int(self.get_parameter("source_estimate_top_k").value))
 
         self.width = int(math.ceil((self.map_max_x - self.map_min_x) / self.resolution))
         self.height = int(math.ceil((self.map_max_y - self.map_min_y) / self.resolution))
@@ -194,7 +196,8 @@ class ProbabilityMap(Node):
     def _publish_outputs(self):
         now = self.get_clock().now().to_msg()
         entropy = self._entropy()
-        pmax, source_x, source_y = self._source_estimate()
+        pmax = self._pmax()
+        source_x, source_y = self._source_estimate()
 
         self.entropy_pub.publish(Float32(data=float(entropy)))
         self.pmax_pub.publish(Float32(data=float(pmax)))
@@ -209,10 +212,31 @@ class ProbabilityMap(Node):
                 entropy -= probability * math.log(probability)
         return entropy
 
-    def _source_estimate(self) -> Tuple[float, float, float]:
-        max_index = max(range(self.cell_count), key=lambda index: self.probabilities[index])
-        source_x, source_y = self._cell_center(max_index)
-        return self.probabilities[max_index], source_x, source_y
+    def _pmax(self) -> float:
+        return max(self.probabilities)
+
+    def _source_estimate(self) -> Tuple[float, float]:
+        top_k = min(self.source_estimate_top_k, self.cell_count)
+        top_indices = sorted(
+            range(self.cell_count),
+            key=lambda index: self.probabilities[index],
+            reverse=True,
+        )[:top_k]
+
+        weight_sum = sum(self.probabilities[index] for index in top_indices)
+        if weight_sum <= 0.0:
+            max_index = max(range(self.cell_count), key=lambda index: self.probabilities[index])
+            return self._cell_center(max_index)
+
+        centroid_x = 0.0
+        centroid_y = 0.0
+        for index in top_indices:
+            source_x, source_y = self._cell_center(index)
+            weight = self.probabilities[index] / weight_sum
+            centroid_x += weight * source_x
+            centroid_y += weight * source_y
+
+        return centroid_x, centroid_y
 
     def _source_pose(self, stamp, source_x: float, source_y: float) -> PoseStamped:
         msg = PoseStamped()
@@ -269,7 +293,8 @@ class ProbabilityMap(Node):
             ])
 
     def _record_metrics(self, detected: bool):
-        pmax, source_x, source_y = self._source_estimate()
+        pmax = self._pmax()
+        source_x, source_y = self._source_estimate()
         entropy = self._entropy()
         now = self.get_clock().now().nanoseconds * 1e-9
         robot_x, robot_y = self.robot_xy
