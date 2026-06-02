@@ -1,0 +1,32 @@
+wind_simulator:
+  ros__parameters:
+    frame_id: map
+    publish_rate_hz: 2.0
+    speed_mps: 1.2
+    direction_yaw: 0.0
+    speed_noise_std: 0.08
+    direction_noise_std: 0.08
+
+odor_simulator:
+  ros__parameters:
+    frame_id: map
+    publish_rate_hz: 5.0
+    odom_topic: /odom
+    robot_pose_topic: /amcl_pose
+    wind_topic: /wind_vector
+    concentration_topic: /odor_concentration
+    detection_topic: /odor_detection
+    marker_topic: /odor/markers
+    source_x: -2.0
+    source_y: 0.5
+    source_z: 0.2
+    release_rate: 8.0
+    plume_sigma_y_base: 0.20
+    plume_sigma_y_gain: 0.22
+    plume_sigma_z_base: 0.20
+    plume_sigma_z_gain: 0.12
+    sensor_height: 0.25
+    detection_threshold: 0.18
+    turbulence_noise_std: 0.04
+    hit_marker_lifetime_sec: 120.0
+    max_hit_markers: 300

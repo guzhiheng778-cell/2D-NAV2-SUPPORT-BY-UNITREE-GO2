@@ -4,6 +4,15 @@ project(go2_config)
 find_package(ament_cmake REQUIRED)
 
 install(
+  PROGRAMS
+    scripts/odor_simulator_node.py
+    scripts/patrol_manager_node.py
+    scripts/probability_map_node.py
+    scripts/wind_simulator_node.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
   DIRECTORY launch config maps worlds
   DESTINATION share/${PROJECT_NAME}
 )

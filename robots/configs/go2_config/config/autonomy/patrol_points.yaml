@@ -1,0 +1,6 @@
+patrol_points:
+  - {name: start_area, x: 0.094, y: -0.053, yaw: 0.0}
+  - {name: east_check, x: 2.0, y: 0.0, yaw: 0.0}
+  - {name: north_check, x: 2.0, y: 2.0, yaw: 1.57}
+  - {name: west_check, x: -1.5, y: 2.0, yaw: 3.14}
+  - {name: return_to_start, x: 0.094, y: -0.053, yaw: 0.0}

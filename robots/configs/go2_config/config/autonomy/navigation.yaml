@@ -1,14 +1,10 @@
 amcl:
   ros__parameters:
     use_sim_time: True
-   # 把这四个值从之前的 0.2 往回调小，比如调到 0.1 左右。
-    # 告诉它：虽然你会打滑，但不要轻易怀疑人生！
-   # ...
-    # 【核心修改】：针对旋转漂移的极端配置！
-    alpha1: 0.2    # 旋转时的旋转误差：极大！（它说转了10度，可能转了30度）
-    alpha2: 0.2    # 平移时的旋转误差：正常
-    alpha3: 1.5    # 平移时的平移误差：正常
-    alpha4: 1.0    # 旋转时的平移误差：极大！（这是核心！告诉AMCL：原地转圈时如果Odom说发生位移是错的）
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.3
+    alpha4: 0.3
     alpha5: 0.1
     base_frame_id: "base_footprint"
     beam_skip_distance: 0.5
@@ -18,7 +14,7 @@ amcl:
     global_frame_id: "map"
     lambda_short: 0.1
     laser_likelihood_max_dist: 2.0
-    laser_max_range: 100.0
+    laser_max_range: 8.0
     laser_min_range: -1.0
     laser_model_type: "likelihood_field"
     # 增加参与匹配的雷达射线数量（默认通常是 60 或 100）
@@ -28,16 +24,16 @@ amcl:
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
-    recovery_alpha_fast: 0.1    # 快速衰减率，用于应对突然的“绑架”（比如打滑瞬间原本是0）
-    recovery_alpha_slow: 0.001  # 慢速衰减率，用于发现长期的定位失效(原本是0)
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
     resample_interval: 1
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     save_pose_rate: 0.5
     sigma_hit: 0.2
     tf_broadcast: true
     transform_tolerance: 1.0
-    update_min_a: 0.1
-    update_min_d: 0.1
+    update_min_a: 0.03
+    update_min_d: 0.03
     # 下面这四个参数加起来通常等于 1.0 (或者接近1)
     z_hit: 0.80    # <--- 【调大】高度信任雷达击中墙壁的数据（之前是0.5）
     z_max: 0.1    # 测距最大值的概率权重
@@ -48,7 +44,7 @@ amcl:
     initial_pose: 
       x: 0.0
       y: 0.0
-      yaw: 0.785
+      yaw: 0.0
 
 
 amcl_map_client:
@@ -130,7 +126,7 @@ controller_server:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.35
     # DWB parameters
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"

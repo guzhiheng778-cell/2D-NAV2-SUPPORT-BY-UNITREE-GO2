@@ -1,0 +1,31 @@
+probability_map:
+  ros__parameters:
+    frame_id: map
+    odom_topic: /odom
+    wind_topic: /wind_vector
+    detection_topic: /odor_detection
+    probability_grid_topic: /probability_grid
+    entropy_topic: /entropy
+    pmax_topic: /pmax
+    source_estimate_topic: /source_estimate
+    marker_topic: /probability/markers
+    csv_output_file: /tmp/go2_probability_metrics.csv
+    map_min_x: -10.0
+    map_max_x: 10.0
+    map_min_y: -10.0
+    map_max_y: 10.0
+    resolution: 0.20
+    publish_rate_hz: 2.0
+    min_update_distance: 0.15
+    min_update_interval_sec: 0.50
+    release_rate: 8.0
+    plume_sigma_y_base: 0.20
+    plume_sigma_y_gain: 0.22
+    plume_sigma_z_base: 0.20
+    plume_sigma_z_gain: 0.12
+    sensor_height: 0.25
+    source_height: 0.2
+    detection_threshold: 0.18
+    hit_likelihood_floor: 0.05
+    void_likelihood_floor: 0.05
+    likelihood_temperature: 0.12
