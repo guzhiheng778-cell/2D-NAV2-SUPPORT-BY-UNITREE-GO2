@@ -1,0 +1,66 @@
+v_info_arbiter:
+  ros__parameters:
+    v_info_topic: /v_info
+    best_info_goal_topic: /best_info_goal
+    cmd_vel_topic: /cmd_vel
+    pmax_topic: /pmax
+    entropy_topic: /entropy
+    source_estimate_topic: /source_estimate
+    odor_detection_topic: /odor_detection
+    costmap_topic: /local_costmap/costmap
+    robot_pose_topic: /amcl_pose
+    odom_topic: /odom
+    active_topic: /source_seek/active
+    success_topic: /source_seek/succeeded
+    state_topic: /v_info_arbiter/state
+    status_topic: /v_info_arbiter/status
+    goal_frame: map
+
+    control_rate_hz: 10.0
+
+    # Your odor field is tuned so the source confidence can stay above 0.2.
+    pmax_enter_threshold: 0.0020
+    pmax_exit_threshold: 0.0015
+    pmax_drop_tolerance: 0.0050
+
+    # Safety and freshness checks.
+    v_info_timeout_sec: 0.60
+    best_info_goal_timeout_sec: 2.0
+    hit_timeout_sec: 0.0
+
+    # Keep v_info control local and temporary, but long enough for several
+    # Nav2 local goals before falling back to patrol.
+    max_source_seek_duration_sec: 45.0
+    max_source_seek_extended_duration_sec: 90.0
+    duration_reward_per_local_goal_sec: 8.0
+    max_source_seek_distance: 2.00
+    source_reached_distance: 0.45
+    source_success_min_duration_sec: 2.0
+    pmax_success_threshold: 0.0020
+    recovery_stop_sec: 1.0
+    patrol_resume_lockout_sec: 3.0
+
+    # Engineering approximation of "information keeps improving".
+    entropy_grace_sec: 10.0
+    min_entropy_drop: 0.0
+
+    # Local Nav2 goal generated along the /v_info direction.
+    local_goal_distance: 0.60
+    local_goal_timeout_sec: 20.0
+    local_goal_tolerance: 0.30
+    # Only reject local goals that land on a true lethal obstacle. Inflation
+    # cells are left for Nav2 to handle during planning and obstacle avoidance.
+    goal_cost_threshold: 100
+    goal_search_radius: 0.0
+    reject_unknown_goals: false
+    no_valid_goal_retry_sec: 0.50
+    max_no_valid_goal_attempts: 4
+    source_seek_failure_cooldown_sec: 10.0
+
+    # v_info is used as direction input; angular velocity is clamped when
+    # projecting that direction.
+    max_linear_vel: 0.16
+    max_angular_vel: 0.40
+    allow_reverse: false
+    require_nonzero_v_info_on_enter: true
+    min_enter_speed: 0.02

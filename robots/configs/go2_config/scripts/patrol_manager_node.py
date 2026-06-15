@@ -8,6 +8,7 @@ from typing import List
 
 import rclpy
 import yaml
+from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav2_msgs.action import NavigateToPose
 from nav_msgs.msg import Odometry, Path
@@ -54,7 +55,13 @@ class PatrolManager(Node):
         self.declare_parameter("trajectory_topic", "/patrol/trajectory")
         self.declare_parameter("trajectory_output_file", "/tmp/go2_patrol_trajectory.csv")
         self.declare_parameter("source_seek_active_topic", "/source_seek/active")
+        self.declare_parameter("source_seek_success_topic", "/source_seek/succeeded")
         self.declare_parameter("pause_on_source_seek", True)
+        self.declare_parameter("stop_on_source_reached", True)
+        self.declare_parameter("optimize_resume_after_source_seek", True)
+        self.declare_parameter("resume_skip_lookahead", 2)
+        self.declare_parameter("resume_skip_distance_margin", 0.25)
+        self.declare_parameter("resume_skip_arrival_tolerance", 0.45)
 
         self.loop = self.get_parameter("loop").value
         self.wait_time_sec = float(self.get_parameter("wait_time_sec").value)
@@ -69,7 +76,19 @@ class PatrolManager(Node):
         trajectory_topic = self.get_parameter("trajectory_topic").value
         self.trajectory_output_file = self.get_parameter("trajectory_output_file").value
         source_seek_active_topic = self.get_parameter("source_seek_active_topic").value
+        source_seek_success_topic = self.get_parameter("source_seek_success_topic").value
         self.pause_on_source_seek = bool(self.get_parameter("pause_on_source_seek").value)
+        self.stop_on_source_reached = bool(self.get_parameter("stop_on_source_reached").value)
+        self.optimize_resume_after_source_seek = bool(
+            self.get_parameter("optimize_resume_after_source_seek").value
+        )
+        self.resume_skip_lookahead = int(self.get_parameter("resume_skip_lookahead").value)
+        self.resume_skip_distance_margin = float(
+            self.get_parameter("resume_skip_distance_margin").value
+        )
+        self.resume_skip_arrival_tolerance = float(
+            self.get_parameter("resume_skip_arrival_tolerance").value
+        )
 
         self.points = self._load_patrol_points()
         self.current_index = 0
@@ -84,7 +103,9 @@ class PatrolManager(Node):
         self.latest_pose_yaw = None
         self.active_goal_retry_count = 0
         self.source_seek_active = False
+        self.source_seek_succeeded = False
         self.current_goal_handle = None
+        self.canceling_for_source_seek = False
 
         self.path_msg = Path()
         self.path_msg.header.frame_id = self.goal_frame
@@ -95,6 +116,9 @@ class PatrolManager(Node):
         )#只要这个话题收到新消息，就自动调用 self._pose_callback(msg)。
         self.source_seek_sub = self.create_subscription(
             Bool, source_seek_active_topic, self._source_seek_active_callback, 10
+        )
+        self.source_seek_success_sub = self.create_subscription(
+            Bool, source_seek_success_topic, self._source_seek_success_callback, 10
         )
         self.action_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
 
@@ -173,6 +197,9 @@ class PatrolManager(Node):
             ])
 
     def _tick(self):
+        if self.source_seek_succeeded and self.stop_on_source_reached:
+            return
+
         if self.pause_on_source_seek and self.source_seek_active:
             return
 
@@ -252,6 +279,12 @@ class PatrolManager(Node):
             self.wait_until = self.get_clock().now() + Duration(
                 seconds=self.wait_time_sec + self.goal_settle_time_sec
             )
+        elif self.canceling_for_source_seek and status == GoalStatus.STATUS_CANCELED:
+            self.get_logger().info(
+                f"Goal '{self.active_goal_name}' canceled for source seeking; "
+                "will resend the same patrol point when source seeking ends"
+            )
+            self.canceling_for_source_seek = False
         else:
             self.get_logger().warn(f"Goal '{self.active_goal_name}' finished with status {status}")
             self._advance_point()
@@ -320,13 +353,72 @@ class PatrolManager(Node):
         if self.source_seek_active and not was_active:
             self.get_logger().info("Source seeking active, pausing patrol")
             if self.current_goal_handle is not None:
+                self.canceling_for_source_seek = True
                 self.current_goal_handle.cancel_goal_async()
             self.goal_in_progress = False
             self.wait_until = None
             self.goal_sent_time = None
             self.current_goal_handle = None
         elif not self.source_seek_active and was_active:
+            if self.source_seek_succeeded and self.stop_on_source_reached:
+                self.get_logger().info("Source reached; patrol will remain stopped")
+                return
+            if self.optimize_resume_after_source_seek:
+                self._optimize_resume_target()
             self.get_logger().info("Source seeking inactive, resuming patrol")
+
+    def _source_seek_success_callback(self, msg: Bool):
+        if not msg.data or self.source_seek_succeeded:
+            return
+        self.source_seek_succeeded = True
+        self.get_logger().info("Source reached signal received; stopping patrol mission")
+        if self.current_goal_handle is not None:
+            self.current_goal_handle.cancel_goal_async()
+        self.goal_in_progress = False
+        self.wait_until = None
+        self.goal_sent_time = None
+        self.active_goal_name = "source_reached"
+        self.current_goal_handle = None
+
+    def _optimize_resume_target(self):
+        if self.current_index >= len(self.points):
+            return
+        if self.latest_pose_x is None or self.latest_pose_y is None:
+            return
+
+        best_index = self.current_index
+        best_distance = self._distance_to_point(self.points[best_index])
+        max_index = min(len(self.points) - 1, self.current_index + max(0, self.resume_skip_lookahead))
+
+        for index in range(self.current_index + 1, max_index + 1):
+            distance = self._distance_to_point(self.points[index])
+            if distance <= self.resume_skip_arrival_tolerance:
+                best_index = index
+                best_distance = distance
+                break
+            if distance + self.resume_skip_distance_margin < best_distance:
+                best_index = index
+                best_distance = distance
+
+        if best_index == self.current_index:
+            return
+
+        old_point = self.points[self.current_index]
+        new_point = self.points[best_index]
+        old_distance = self._distance_to_point(old_point)
+        self.get_logger().info(
+            "Skipping patrol goal after source seeking: "
+            f"'{old_point.name}' distance={old_distance:.2f}m -> "
+            f"'{new_point.name}' distance={best_distance:.2f}m"
+        )
+        self.current_index = best_index
+        self.active_goal_name = ""
+        self.goal_sent_time = None
+        self.active_goal_retry_count = 0
+        self.current_goal_handle = None
+
+    def _distance_to_point(self, point: PatrolPoint) -> float:
+        return math.hypot(self.latest_pose_x - point.x, self.latest_pose_y - point.y)
 
 
 def main(args=None):

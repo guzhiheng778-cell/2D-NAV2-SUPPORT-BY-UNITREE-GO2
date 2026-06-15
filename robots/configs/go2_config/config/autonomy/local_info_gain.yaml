@@ -1,0 +1,43 @@
+local_info_gain:
+  ros__parameters:
+    robot_pose_topic: /amcl_pose
+    odom_topic: /odom
+    probability_grid_topic: /probability_grid
+    source_estimate_topic: /source_estimate
+    costmap_topic: /local_costmap/costmap
+    velocity_topic: /v_info
+    best_goal_topic: /best_info_goal
+    status_topic: /local_info_gain/status
+    marker_topic: /local_info_gain/markers
+    control_rate_hz: 2.0
+
+    candidate_distance: 0.80
+    candidate_radius: 0.45
+    visited_radius: 0.65
+
+    max_linear_vel: 0.18
+    max_angular_vel: 0.45
+    linear_gain: 0.40
+    angular_gain: 1.20
+    rotate_in_place_angle: 0.75
+
+    w_probability: 1.6
+    w_pmax: 2.0
+    w_unknown: 0.35
+    w_obstacle: 0.8
+    w_revisit: 2.0
+    w_turn: 0.3
+    w_reverse_penalty: 0.20
+    w_stop_penalty: 0.05
+    unvisited_weight: 0.7
+    uncertainty_weight: 0.3
+
+    obstacle_lethal_threshold: 85
+    obstacle_unknown_cost: 0.35
+    revisit_memory_sec: 20.0
+    revisit_radius: 0.65
+    revisit_ignore_recent_sec: 2.0
+    selection_hold_sec: 1.50
+    selection_hysteresis: 0.12
+    velocity_smoothing_alpha: 0.25
+    publish_zero_without_inputs: true
