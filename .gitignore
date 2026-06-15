@@ -1,0 +1,36 @@
+# ROS/colcon build artifacts
+build/
+install/
+log/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# C/C++ build outputs
+*.o
+*.so
+*.a
+*.d
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Local runtime data
+*.bag
+*.db3
+
+# Local visualization/export artifacts
+frames_*.gv
+frames_*.pdf
+plotjuggler/
+
+# Heavy upstream/vendor checkouts kept locally.
+# Track only project-specific overlay changes explicitly.
+src/linorobot2/
+src/unitree_ros2/
+src/third_party_repos/unitree-go2-ros2/
