@@ -89,6 +89,11 @@ def generate_launch_description():
             description="Enable temporary /v_info takeover state machine",
         ),
         DeclareLaunchArgument(
+            "enable_patrol_manager",
+            default_value="true",
+            description="Enable patrol waypoint manager",
+        ),
+        DeclareLaunchArgument(
             "enable_greedy_nav2_seek",
             default_value="false",
             description="Enable older 5.1 Nav2 source_estimate seeking node",
@@ -98,6 +103,7 @@ def generate_launch_description():
             executable="patrol_manager_node.py",
             name="patrol_manager",
             output="screen",
+            condition=IfCondition(LaunchConfiguration("enable_patrol_manager")),#读取launch中的该参数，如果为true则运行该节点
             parameters=[
                 {"points_file": LaunchConfiguration("points_file")},
                 {"use_sim_time": LaunchConfiguration("use_sim_time")},

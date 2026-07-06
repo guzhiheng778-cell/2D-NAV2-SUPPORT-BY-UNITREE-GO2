@@ -53,6 +53,7 @@ class PatrolManager(Node):
         self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("robot_pose_topic", "/amcl_pose")
         self.declare_parameter("trajectory_topic", "/patrol/trajectory")
+        self.declare_parameter("patrol_active_topic", "/patrol/active")
         self.declare_parameter("trajectory_output_file", "/tmp/go2_patrol_trajectory.csv")
         self.declare_parameter("source_seek_active_topic", "/source_seek/active")
         self.declare_parameter("source_seek_success_topic", "/source_seek/succeeded")
@@ -74,6 +75,7 @@ class PatrolManager(Node):
         odom_topic = self.get_parameter("odom_topic").value
         robot_pose_topic = self.get_parameter("robot_pose_topic").value
         trajectory_topic = self.get_parameter("trajectory_topic").value
+        patrol_active_topic = self.get_parameter("patrol_active_topic").value
         self.trajectory_output_file = self.get_parameter("trajectory_output_file").value
         source_seek_active_topic = self.get_parameter("source_seek_active_topic").value
         source_seek_success_topic = self.get_parameter("source_seek_success_topic").value
@@ -110,6 +112,7 @@ class PatrolManager(Node):
         self.path_msg = Path()
         self.path_msg.header.frame_id = self.goal_frame
         self.trajectory_pub = self.create_publisher(Path, trajectory_topic, 10)
+        self.patrol_active_pub = self.create_publisher(Bool, patrol_active_topic, 10)
         self.odom_sub = self.create_subscription(Odometry, odom_topic, self._odom_callback, 20)
         self.pose_sub = self.create_subscription(
             PoseWithCovarianceStamped, robot_pose_topic, self._pose_callback, 10
@@ -198,10 +201,14 @@ class PatrolManager(Node):
 
     def _tick(self):
         if self.source_seek_succeeded and self.stop_on_source_reached:
+            self._publish_patrol_active(False)
             return
 
         if self.pause_on_source_seek and self.source_seek_active:
+            self._publish_patrol_active(False)
             return
+
+        self._publish_patrol_active(self.goal_in_progress or self.wait_until is not None)
 
         if self.goal_in_progress:
             if self.goal_sent_time is None:
@@ -228,6 +235,10 @@ class PatrolManager(Node):
             self.current_index = 0
 
         self._send_current_goal()
+        self._publish_patrol_active(self.goal_in_progress)
+
+    def _publish_patrol_active(self, active: bool):
+        self.patrol_active_pub.publish(Bool(data=active))
 
     def _send_current_goal(self):
         if not self.action_client.wait_for_server(timeout_sec=0.1):

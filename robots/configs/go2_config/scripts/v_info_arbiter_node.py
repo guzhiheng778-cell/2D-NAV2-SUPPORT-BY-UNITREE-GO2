@@ -18,6 +18,7 @@ from std_msgs.msg import Bool, Float32, String
 class ControlState(Enum):
     PATROL = "PATROL"
     SOURCE_SEEK = "SOURCE_SEEK"
+    SOURCE_CONFIRM = "SOURCE_CONFIRM"
     RECOVERY = "RECOVERY"
 
 
@@ -46,7 +47,11 @@ class VInfoArbiter(Node):
         self.declare_parameter("pmax_topic", "/pmax")
         self.declare_parameter("entropy_topic", "/entropy")
         self.declare_parameter("source_estimate_topic", "/source_estimate")
+        self.declare_parameter("source_mass_topic", "/source_probability_mass")
+        self.declare_parameter("concentration_topic", "/odor_concentration")
         self.declare_parameter("odor_detection_topic", "/odor_detection")
+        self.declare_parameter("patrol_active_topic", "/patrol/active")
+        self.declare_parameter("confirm_active_topic", "/source_confirm/active")
         self.declare_parameter("costmap_topic", "/local_costmap/costmap")
         self.declare_parameter("robot_pose_topic", "/amcl_pose")
         self.declare_parameter("odom_topic", "/odom")
@@ -62,22 +67,42 @@ class VInfoArbiter(Node):
         self.declare_parameter("pmax_drop_tolerance", 0.05)
         self.declare_parameter("v_info_timeout_sec", 0.60)
         self.declare_parameter("best_info_goal_timeout_sec", 2.0)
+        self.declare_parameter("concentration_timeout_sec", 1.0)
+        self.declare_parameter("patrol_active_timeout_sec", 1.5)
         self.declare_parameter("hit_timeout_sec", 8.0)
+        self.declare_parameter("require_patrol_active_before_source_seek", True)
+        self.declare_parameter("patrol_min_duration_before_source_seek_sec", 15.0)
+        self.declare_parameter("require_concentration_on_enter", True)
+        self.declare_parameter("concentration_enter_threshold", 0.50)
         self.declare_parameter("max_source_seek_duration_sec", 15.0)
         self.declare_parameter("max_source_seek_extended_duration_sec", 90.0)
         self.declare_parameter("duration_reward_per_local_goal_sec", 8.0)
-        self.declare_parameter("max_source_seek_distance", 2.00)
+        self.declare_parameter("max_source_seek_distance", 6.00)
         self.declare_parameter("source_reached_distance", 0.45)
         self.declare_parameter("source_success_min_duration_sec", 2.0)
+        self.declare_parameter("source_estimate_stability_window_sec", 3.0)
+        self.declare_parameter("source_estimate_stability_radius", 0.35)
         self.declare_parameter("pmax_success_threshold", 0.0020)
+        self.declare_parameter("source_mass_success_threshold", 0.020)
+        self.declare_parameter("source_mass_min_gain", 0.005)
+        self.declare_parameter("confirm_enter_distance", 0.60)
+        self.declare_parameter("confirm_min_duration_sec", 4.0)
+        self.declare_parameter("confirm_timeout_sec", 18.0)
+        self.declare_parameter("confirm_sampling_radius", 0.30)
+        self.declare_parameter("confirm_sampling_goal_timeout_sec", 8.0)
+        self.declare_parameter("enable_confirm_sampling", True)
         self.declare_parameter("recovery_stop_sec", 1.0)
         self.declare_parameter("patrol_resume_lockout_sec", 3.0)
         self.declare_parameter("entropy_grace_sec", 2.0)
         self.declare_parameter("min_entropy_drop", 0.01)
+        self.declare_parameter("source_seek_mode", "nav2_goal")
         self.declare_parameter("max_linear_vel", 0.16)
         self.declare_parameter("max_angular_vel", 0.40)
+        self.declare_parameter("direct_min_linear_vel", 0.05)
+        self.declare_parameter("source_guided_goal_min_pmax", 0.00015)
+        self.declare_parameter("source_guided_goal_min_mass", 0.0)
         self.declare_parameter("local_goal_distance", 0.80)
-        self.declare_parameter("local_goal_timeout_sec", 12.0)
+        self.declare_parameter("local_goal_timeout_sec", 45.0)
         self.declare_parameter("local_goal_tolerance", 0.30)
         self.declare_parameter("goal_cost_threshold", 100)
         self.declare_parameter("goal_search_radius", 0.0)
@@ -98,7 +123,25 @@ class VInfoArbiter(Node):
         self.best_info_goal_timeout_sec = float(
             self.get_parameter("best_info_goal_timeout_sec").value
         )
+        self.concentration_timeout_sec = float(
+            self.get_parameter("concentration_timeout_sec").value
+        )
+        self.patrol_active_timeout_sec = float(
+            self.get_parameter("patrol_active_timeout_sec").value
+        )
         self.hit_timeout_sec = float(self.get_parameter("hit_timeout_sec").value)
+        self.require_patrol_active_before_source_seek = bool(
+            self.get_parameter("require_patrol_active_before_source_seek").value
+        )
+        self.patrol_min_duration_before_source_seek_sec = float(
+            self.get_parameter("patrol_min_duration_before_source_seek_sec").value
+        )
+        self.require_concentration_on_enter = bool(
+            self.get_parameter("require_concentration_on_enter").value
+        )
+        self.concentration_enter_threshold = float(
+            self.get_parameter("concentration_enter_threshold").value
+        )
         self.max_source_seek_duration_sec = float(
             self.get_parameter("max_source_seek_duration_sec").value
         )
@@ -113,15 +156,41 @@ class VInfoArbiter(Node):
         self.source_success_min_duration_sec = float(
             self.get_parameter("source_success_min_duration_sec").value
         )
+        self.source_estimate_stability_window_sec = float(
+            self.get_parameter("source_estimate_stability_window_sec").value
+        )
+        self.source_estimate_stability_radius = float(
+            self.get_parameter("source_estimate_stability_radius").value
+        )
         self.pmax_success_threshold = float(self.get_parameter("pmax_success_threshold").value)
+        self.source_mass_success_threshold = float(
+            self.get_parameter("source_mass_success_threshold").value
+        )
+        self.source_mass_min_gain = float(self.get_parameter("source_mass_min_gain").value)
+        self.confirm_enter_distance = float(self.get_parameter("confirm_enter_distance").value)
+        self.confirm_min_duration_sec = float(self.get_parameter("confirm_min_duration_sec").value)
+        self.confirm_timeout_sec = float(self.get_parameter("confirm_timeout_sec").value)
+        self.confirm_sampling_radius = float(self.get_parameter("confirm_sampling_radius").value)
+        self.confirm_sampling_goal_timeout_sec = float(
+            self.get_parameter("confirm_sampling_goal_timeout_sec").value
+        )
+        self.enable_confirm_sampling = bool(self.get_parameter("enable_confirm_sampling").value)
         self.recovery_stop_sec = float(self.get_parameter("recovery_stop_sec").value)
         self.patrol_resume_lockout_sec = float(
             self.get_parameter("patrol_resume_lockout_sec").value
         )
         self.entropy_grace_sec = float(self.get_parameter("entropy_grace_sec").value)
         self.min_entropy_drop = float(self.get_parameter("min_entropy_drop").value)
+        self.source_seek_mode = str(self.get_parameter("source_seek_mode").value)
         self.max_linear_vel = float(self.get_parameter("max_linear_vel").value)
         self.max_angular_vel = float(self.get_parameter("max_angular_vel").value)
+        self.direct_min_linear_vel = float(self.get_parameter("direct_min_linear_vel").value)
+        self.source_guided_goal_min_pmax = float(
+            self.get_parameter("source_guided_goal_min_pmax").value
+        )
+        self.source_guided_goal_min_mass = float(
+            self.get_parameter("source_guided_goal_min_mass").value
+        )
         self.local_goal_distance = float(self.get_parameter("local_goal_distance").value)
         self.local_goal_timeout_sec = float(self.get_parameter("local_goal_timeout_sec").value)
         self.local_goal_tolerance = float(self.get_parameter("local_goal_tolerance").value)
@@ -148,9 +217,20 @@ class VInfoArbiter(Node):
         self.last_best_info_goal: Optional[PoseStamped] = None
         self.last_best_info_goal_time = None
         self.pmax = 0.0
+        self.concentration: Optional[float] = None
+        self.last_concentration_time = None
+        self.patrol_active = False
+        self.last_patrol_active_time = None
+        self.patrol_active_started_time = None
         self.source_seek_peak_pmax = 0.0
         self.entropy: Optional[float] = None
         self.source_seek_start_entropy: Optional[float] = None
+        self.source_mass: Optional[float] = None
+        self.confirm_start_source_mass: Optional[float] = None
+        self.source_estimate_history = []
+        self.confirm_sample_index = 0
+        self.confirm_sample_anchor: Optional[Tuple[float, float]] = None
+        self.confirm_goal_sent_time = None
         self.source_seek_duration_bonus_sec = 0.0
         self.source_seek_successful_local_goals = 0
         self.last_hit_time = None
@@ -171,6 +251,9 @@ class VInfoArbiter(Node):
         self.source_reached_latched = False
 
         self.cmd_pub = self.create_publisher(Twist, self.get_parameter("cmd_vel_topic").value, 10)
+        self.confirm_active_pub = self.create_publisher(
+            Bool, self.get_parameter("confirm_active_topic").value, 10
+        )
         self.active_pub = self.create_publisher(
             Bool, self.get_parameter("active_topic").value, 10
         )
@@ -194,6 +277,12 @@ class VInfoArbiter(Node):
         )
         self.create_subscription(Float32, self.get_parameter("pmax_topic").value, self._pmax_cb, 10)
         self.create_subscription(
+            Float32,
+            self.get_parameter("concentration_topic").value,
+            self._concentration_cb,
+            10,
+        )
+        self.create_subscription(
             Float32, self.get_parameter("entropy_topic").value, self._entropy_cb, 10
         )
         self.create_subscription(
@@ -203,7 +292,19 @@ class VInfoArbiter(Node):
             10,
         )
         self.create_subscription(
+            Float32,
+            self.get_parameter("source_mass_topic").value,
+            self._source_mass_cb,
+            10,
+        )
+        self.create_subscription(
             Bool, self.get_parameter("odor_detection_topic").value, self._detection_cb, 20
+        )
+        self.create_subscription(
+            Bool,
+            self.get_parameter("patrol_active_topic").value,
+            self._patrol_active_cb,
+            10,
         )
         self.create_subscription(
             OccupancyGrid, self.get_parameter("costmap_topic").value, self._costmap_cb, 2
@@ -219,7 +320,8 @@ class VInfoArbiter(Node):
         self.timer = self.create_timer(1.0 / self.control_rate_hz, self._tick)
         self.get_logger().info(
             "v_info arbiter ready: PATROL -> SOURCE_SEEK when "
-            f"Pmax>{self.pmax_enter_threshold:.3f} and /v_info is safe"
+            f"concentration>{self.concentration_enter_threshold:.3f}, "
+            f"Pmax>{self.pmax_enter_threshold:.6f}, and /v_info is safe"
         )
 
     def _v_info_cb(self, msg: Twist):
@@ -233,15 +335,44 @@ class VInfoArbiter(Node):
     def _pmax_cb(self, msg: Float32):
         self.pmax = float(msg.data)
 
+    def _concentration_cb(self, msg: Float32):
+        self.concentration = max(0.0, float(msg.data))
+        self.last_concentration_time = self.get_clock().now()
+
     def _entropy_cb(self, msg: Float32):
         self.entropy = float(msg.data)
 
     def _source_estimate_cb(self, msg: PoseStamped):
         self.source_estimate_xy = (msg.pose.position.x, msg.pose.position.y)
+        now = self.get_clock().now()
+        self.source_estimate_history.append((now, msg.pose.position.x, msg.pose.position.y))
+        history_limit_sec = max(
+            self.source_estimate_stability_window_sec,
+            self.confirm_min_duration_sec,
+            1.0,
+        ) + 2.0
+        self.source_estimate_history = [
+            sample
+            for sample in self.source_estimate_history
+            if self._age_sec(sample[0]) <= history_limit_sec
+        ]
+
+    def _source_mass_cb(self, msg: Float32):
+        self.source_mass = float(msg.data)
 
     def _detection_cb(self, msg: Bool):
         if msg.data:
             self.last_hit_time = self.get_clock().now()
+
+    def _patrol_active_cb(self, msg: Bool):
+        now = self.get_clock().now()
+        active = bool(msg.data)
+        self.last_patrol_active_time = now
+        if active and not self.patrol_active:
+            self.patrol_active_started_time = now
+        elif not active:
+            self.patrol_active_started_time = None
+        self.patrol_active = active
 
     def _costmap_cb(self, msg: OccupancyGrid):
         self.costmap = msg
@@ -268,10 +399,13 @@ class VInfoArbiter(Node):
             self._tick_patrol()
         elif self.state == ControlState.SOURCE_SEEK:
             self._tick_source_seek()
+        elif self.state == ControlState.SOURCE_CONFIRM:
+            self._tick_source_confirm()
         else:
             self._tick_recovery()
 
         self.active_pub.publish(Bool(data=self.state != ControlState.PATROL))
+        self.confirm_active_pub.publish(Bool(data=self.state == ControlState.SOURCE_CONFIRM))
         self.success_pub.publish(Bool(data=self.source_reached_latched))
         self.state_pub.publish(String(data=self.state.value))
 
@@ -283,6 +417,11 @@ class VInfoArbiter(Node):
         self._publish_status(f"PATROL nav2_active blocked_by={self._entry_block_reason()}")
 
     def _tick_source_seek(self):
+        if self._ready_for_source_confirm():
+            self._enter_state(ControlState.SOURCE_CONFIRM, "source_confirm_ready")
+            self.cmd_pub.publish(Twist())
+            return
+
         exit_reason = self._source_seek_exit_reason()
         if exit_reason:
             self._enter_state(ControlState.RECOVERY, exit_reason)
@@ -291,11 +430,24 @@ class VInfoArbiter(Node):
 
         self.source_seek_peak_pmax = max(self.source_seek_peak_pmax, self.pmax)
 
+        if self.source_seek_mode == "direct_v_info":
+            self._cancel_local_goal()
+            cmd = self._direct_v_info_cmd()
+            self.cmd_pub.publish(cmd)
+            self._publish_status(
+                "SOURCE_SEEK direct_v_info "
+                f"pmax={self.pmax:.6f} "
+                f"linear={cmd.linear.x:.3f} angular={cmd.angular.z:.3f}"
+            )
+            return
+
         if self.local_goal_in_progress:
             distance = self._distance_to_local_goal()
             self._publish_status(
-                f"SOURCE_SEEK nav2_goal_active pmax={self.pmax:.3f} "
-                f"goal_dist={distance:.2f}"
+                f"SOURCE_SEEK nav2_goal_active pmax={self.pmax:.6f} "
+                f"goal_dist={distance:.2f} "
+                f"source_dist={self._source_distance_text()} "
+                f"mass={self._source_mass_text()}"
             )
             return
 
@@ -304,6 +456,10 @@ class VInfoArbiter(Node):
             self.local_goal_result_status = None
             if status == GoalStatus.STATUS_SUCCEEDED:
                 self._reward_source_seek_duration()
+                if self._ready_for_source_confirm():
+                    self._enter_state(ControlState.SOURCE_CONFIRM, "source_confirm_after_local_goal")
+                    self.cmd_pub.publish(Twist())
+                    return
                 self._publish_status(
                     "SOURCE_SEEK local_goal_reached recalculating "
                     f"duration_limit={self._effective_source_seek_duration_sec():.1f}s "
@@ -339,6 +495,65 @@ class VInfoArbiter(Node):
 
         self._send_local_goal(goal)
 
+    def _tick_source_confirm(self):
+        self.cmd_pub.publish(Twist())
+
+        if self._source_reached():
+            self._enter_state(ControlState.RECOVERY, "source_reached")
+            return
+
+        if self.pmax < self.pmax_exit_threshold:
+            self._enter_state(ControlState.RECOVERY, "confirm_pmax_below_exit_threshold")
+            return
+
+        if self._state_age_sec() > self.confirm_timeout_sec:
+            self._enter_state(ControlState.RECOVERY, "source_confirm_timeout")
+            return
+
+        if self.local_goal_in_progress:
+            if self.confirm_goal_sent_time is not None and (
+                self._age_sec(self.confirm_goal_sent_time) >= self.confirm_sampling_goal_timeout_sec
+            ):
+                self._enter_state(ControlState.RECOVERY, "source_confirm_goal_timeout")
+                return
+            self._publish_status(
+                "SOURCE_CONFIRM sampling_goal_active "
+                f"dist={self._distance_to_local_goal():.2f} "
+                f"mass={self._source_mass_text()}"
+            )
+            return
+
+        if self.local_goal_result_status is not None:
+            status = self.local_goal_result_status
+            self.local_goal_result_status = None
+            if status != GoalStatus.STATUS_SUCCEEDED:
+                self._publish_status(f"SOURCE_CONFIRM sampling_goal_status_{status}")
+
+        if not self.enable_confirm_sampling:
+            near_reached = self._near_source_estimate(self.source_reached_distance)
+            near_confirm = self._near_source_estimate(self.confirm_enter_distance)
+            stable = self._source_estimate_stable()
+            if not near_confirm:
+                self._enter_state(ControlState.SOURCE_SEEK, "source_confirm_lost_estimate")
+                return
+            self._publish_status(
+                "SOURCE_CONFIRM holding "
+                f"stable={stable} "
+                f"near={near_reached} "
+                f"near_confirm={near_confirm} "
+                f"mass={self._source_mass_text()}"
+            )
+            return
+
+        goal = self._build_confirm_sampling_goal()
+        if goal is None:
+            self._publish_status(
+                "SOURCE_CONFIRM no_valid_sampling_goal "
+                f"mass={self._source_mass_text()}"
+            )
+            return
+        self._send_confirm_sampling_goal(goal)
+
     def _tick_recovery(self):
         self.cmd_pub.publish(Twist())
         if self._state_age_sec() >= self.recovery_stop_sec:
@@ -356,8 +571,32 @@ class VInfoArbiter(Node):
         if self._source_seek_cooldown_locked():
             remaining = (self.source_seek_cooldown_until - self.get_clock().now()).nanoseconds * 1e-9
             return f"source_seek_cooldown({max(0.0, remaining):.2f}s)"
+        if self.require_patrol_active_before_source_seek:
+            if not self._patrol_active_is_fresh():
+                return "patrol_active_stale"
+            if not self.patrol_active or self.patrol_active_started_time is None:
+                return "patrol_inactive"
+            patrol_age = self._age_sec(self.patrol_active_started_time)
+        else:
+            patrol_age = self._state_age_sec()
+        if patrol_age < self.patrol_min_duration_before_source_seek_sec:
+            return (
+                "patrol_min_duration"
+                f"({patrol_age:.1f}<"
+                f"{self.patrol_min_duration_before_source_seek_sec:.1f}s)"
+            )
+        if self.require_concentration_on_enter:
+            if not self._concentration_is_fresh():
+                return "concentration_stale"
+            if self.concentration is None or self.concentration < self.concentration_enter_threshold:
+                value = 0.0 if self.concentration is None else self.concentration
+                return (
+                    "concentration_low"
+                    f"({value:.3f}<"
+                    f"{self.concentration_enter_threshold:.3f})"
+                )
         if self.pmax <= self.pmax_enter_threshold:
-            return f"pmax_low({self.pmax:.4f}<={self.pmax_enter_threshold:.4f})"
+            return f"pmax_low({self.pmax:.6f}<={self.pmax_enter_threshold:.6f})"
         has_fresh_best_goal = self._best_info_goal_is_fresh()
         if not self._v_info_is_fresh() and not has_fresh_best_goal:
             return "info_goal_stale"
@@ -406,12 +645,24 @@ class VInfoArbiter(Node):
         )
         return cmd
 
+    def _direct_v_info_cmd(self) -> Twist:
+        cmd = self._limited_v_info()
+        has_direction = self._v_info_is_fresh() and self._v_info_has_motion()
+        if has_direction and self.direct_min_linear_vel > 0.0:
+            if 0.0 <= cmd.linear.x < self.direct_min_linear_vel:
+                cmd.linear.x = min(self.direct_min_linear_vel, self.max_linear_vel)
+        return cmd
+
     def _build_local_goal(self) -> Optional[PoseStamped]:
         if self.robot_pose is None:
             return None
         if not self.action_client.wait_for_server(timeout_sec=0.1):
             self._publish_status("SOURCE_SEEK waiting_for_nav2_action_server")
             return None
+
+        direct_goal = self._build_goal_toward_source_estimate()
+        if direct_goal is not None:
+            return direct_goal
 
         direct_goal = self._build_goal_from_best_info_goal()
         if direct_goal is not None:
@@ -425,22 +676,60 @@ class VInfoArbiter(Node):
         candidate = self._first_traversable_goal(robot_x, robot_y, direction_yaw)
         if candidate is None:
             return None
-        goal_x, goal_y, goal_yaw = candidate
+        goal_x, goal_y, _ = candidate
 
         goal = PoseStamped()
         goal.header.frame_id = self.goal_frame
         goal.header.stamp = self.get_clock().now().to_msg()
         goal.pose.position.x = goal_x
         goal.pose.position.y = goal_y
-        qx, qy, qz, qw = yaw_to_quaternion(goal_yaw)
+        qx, qy, qz, qw = yaw_to_quaternion(
+            self._yaw_toward_goal(robot_x, robot_y, goal_x, goal_y, robot_yaw)
+        )
         goal.pose.orientation.x = qx
         goal.pose.orientation.y = qy
         goal.pose.orientation.z = qz
         goal.pose.orientation.w = qw
         return goal
 
+    def _build_goal_toward_source_estimate(self) -> Optional[PoseStamped]:
+        if self.robot_pose is None or self.source_estimate_xy is None:
+            return None
+        if self.pmax < self.source_guided_goal_min_pmax:
+            return None
+        if (
+            self.source_mass is not None
+            and self.source_mass < self.source_guided_goal_min_mass
+        ):
+            return None
+
+        robot_x, robot_y, robot_yaw = self.robot_pose
+        source_x, source_y = self.source_estimate_xy
+        distance = math.hypot(source_x - robot_x, source_y - robot_y)
+        if distance <= self.confirm_enter_distance:
+            return None
+
+        if self._goal_is_blocked_in_local_costmap(source_x, source_y):
+            direction_yaw = math.atan2(source_y - robot_y, source_x - robot_x)
+            candidate = self._first_traversable_goal(robot_x, robot_y, direction_yaw)
+            if candidate is None:
+                return None
+            goal_x, goal_y, _ = candidate
+        else:
+            goal_x, goal_y = source_x, source_y
+
+        goal = self._pose_stamped(
+            goal_x,
+            goal_y,
+            self._yaw_toward_goal(robot_x, robot_y, goal_x, goal_y, robot_yaw),
+        )
+        goal.header.frame_id = self.goal_frame
+        return goal
+
     def _build_goal_from_best_info_goal(self) -> Optional[PoseStamped]:
         if not self._best_info_goal_is_fresh() or self.last_best_info_goal is None:
+            return None
+        if self.robot_pose is None:
             return None
 
         source = self.last_best_info_goal
@@ -452,8 +741,30 @@ class VInfoArbiter(Node):
         goal = PoseStamped()
         goal.header.frame_id = source.header.frame_id or self.goal_frame
         goal.header.stamp = self.get_clock().now().to_msg()
-        goal.pose = source.pose
+        goal.pose.position = source.pose.position
+
+        robot_x, robot_y, robot_yaw = self.robot_pose
+        goal_yaw = self._yaw_toward_goal(robot_x, robot_y, x, y, robot_yaw)
+        qx, qy, qz, qw = yaw_to_quaternion(goal_yaw)
+        goal.pose.orientation.x = qx
+        goal.pose.orientation.y = qy
+        goal.pose.orientation.z = qz
+        goal.pose.orientation.w = qw
         return goal
+
+    def _yaw_toward_goal(
+        self,
+        robot_x: float,
+        robot_y: float,
+        goal_x: float,
+        goal_y: float,
+        fallback_yaw: float,
+    ) -> float:
+        dx = goal_x - robot_x
+        dy = goal_y - robot_y
+        if math.hypot(dx, dy) < 0.10:
+            return fallback_yaw
+        return math.atan2(dy, dx)
 
     def _v_info_direction_yaw(self, robot_yaw: float) -> float:
         linear = self.last_v_info.linear.x
@@ -516,7 +827,19 @@ class VInfoArbiter(Node):
                     return False
         return True
 
-    def _send_local_goal(self, pose: PoseStamped):
+    def _goal_is_blocked_in_local_costmap(self, x: float, y: float) -> bool:
+        if self.costmap is None:
+            return False
+        if self._world_to_grid(self.costmap, x, y) is None:
+            return False
+        return not self._goal_is_traversable(x, y)
+
+    def _send_local_goal(
+        self,
+        pose: PoseStamped,
+        status_prefix: str = "SOURCE_SEEK",
+        status_action: str = "sending_nav2_goal",
+    ):
         goal = NavigateToPose.Goal()
         goal.pose = pose
         self.local_goal_in_progress = True
@@ -524,12 +847,40 @@ class VInfoArbiter(Node):
         self.local_goal_xy = (pose.pose.position.x, pose.pose.position.y)
         self.local_goal_result_status = None
         self.no_valid_goal_attempts = 0
+        mode = self._local_goal_mode(pose)
         self._publish_status(
-            f"SOURCE_SEEK sending_local_nav2_goal x={pose.pose.position.x:.2f} "
-            f"y={pose.pose.position.y:.2f}"
+            f"{status_prefix} {status_action} mode={mode} "
+            f"x={pose.pose.position.x:.2f} y={pose.pose.position.y:.2f}"
         )
         future = self.action_client.send_goal_async(goal)
         future.add_done_callback(self._local_goal_response_cb)
+
+    def _local_goal_mode(self, pose: PoseStamped) -> str:
+        if self.robot_pose is None or self.source_estimate_xy is None:
+            return "fallback"
+        if self.pmax < self.source_guided_goal_min_pmax:
+            return "fallback"
+        if (
+            self.source_mass is not None
+            and self.source_mass < self.source_guided_goal_min_mass
+        ):
+            return "fallback"
+        robot_x, robot_y, _ = self.robot_pose
+        source_x, source_y = self.source_estimate_xy
+        goal_x = pose.pose.position.x
+        goal_y = pose.pose.position.y
+        source_yaw = math.atan2(source_y - robot_y, source_x - robot_x)
+        goal_yaw = math.atan2(goal_y - robot_y, goal_x - robot_x)
+        yaw_error = abs(math.atan2(math.sin(goal_yaw - source_yaw), math.cos(goal_yaw - source_yaw)))
+        return "source_guided" if yaw_error <= 0.75 else "fallback"
+
+    def _send_confirm_sampling_goal(self, pose: PoseStamped):
+        self.confirm_goal_sent_time = self.get_clock().now()
+        self._send_local_goal(
+            pose,
+            status_prefix="SOURCE_CONFIRM",
+            status_action=f"sending_sampling_goal mass={self._source_mass_text()}",
+        )
 
     def _local_goal_response_cb(self, future):
         goal_handle = future.result()
@@ -556,6 +907,7 @@ class VInfoArbiter(Node):
         self.local_goal_handle = None
         self.local_goal_xy = None
         self.local_goal_sent_time = None
+        self.confirm_goal_sent_time = None
         self.local_goal_result_status = None
 
     def _local_goal_timed_out(self) -> bool:
@@ -589,6 +941,16 @@ class VInfoArbiter(Node):
             return False
         return self._age_sec(self.last_best_info_goal_time) <= self.best_info_goal_timeout_sec
 
+    def _concentration_is_fresh(self) -> bool:
+        if self.concentration is None or self.last_concentration_time is None:
+            return False
+        return self._age_sec(self.last_concentration_time) <= self.concentration_timeout_sec
+
+    def _patrol_active_is_fresh(self) -> bool:
+        if self.last_patrol_active_time is None:
+            return False
+        return self._age_sec(self.last_patrol_active_time) <= self.patrol_active_timeout_sec
+
     def _v_info_has_motion(self) -> bool:
         if self.last_v_info is None:
             return False
@@ -609,6 +971,116 @@ class VInfoArbiter(Node):
         dx = self.robot_pose[0] - self.source_seek_start_xy[0]
         dy = self.robot_pose[1] - self.source_seek_start_xy[1]
         return math.hypot(dx, dy)
+
+    def _ready_for_source_confirm(self) -> bool:
+        if self._state_age_sec() < self.source_success_min_duration_sec:
+            return False
+        if self.pmax < self.pmax_success_threshold:
+            return False
+        return self._near_source_estimate(self.confirm_enter_distance)
+
+    def _near_source_estimate(self, distance_threshold: float) -> bool:
+        if self.robot_pose is None or self.source_estimate_xy is None:
+            return False
+        distance = math.hypot(
+            self.robot_pose[0] - self.source_estimate_xy[0],
+            self.robot_pose[1] - self.source_estimate_xy[1],
+        )
+        return distance <= distance_threshold
+
+    def _source_estimate_stable(self) -> bool:
+        if self.source_estimate_xy is None:
+            return False
+        if self.source_estimate_stability_window_sec <= 0.0:
+            return True
+
+        recent = [
+            (stamp, x, y)
+            for stamp, x, y in self.source_estimate_history
+            if self._age_sec(stamp) <= self.source_estimate_stability_window_sec
+        ]
+        if len(recent) < 2:
+            return False
+
+        latest_x, latest_y = self.source_estimate_xy
+        for _, x, y in recent:
+            if math.hypot(x - latest_x, y - latest_y) > self.source_estimate_stability_radius:
+                return False
+        oldest_stamp = recent[0][0]
+        return self._age_sec(oldest_stamp) >= self.source_estimate_stability_window_sec
+
+    def _source_mass_confirmed(self) -> bool:
+        if self.source_mass is None:
+            return False
+        if self.source_mass >= self.source_mass_success_threshold:
+            return True
+        if self.confirm_start_source_mass is None:
+            return False
+        return self.source_mass - self.confirm_start_source_mass >= self.source_mass_min_gain
+
+    def _source_mass_text(self) -> str:
+        if self.source_mass is None:
+            return "none"
+        return f"{self.source_mass:.4f}"
+
+    def _source_distance_text(self) -> str:
+        if self.robot_pose is None or self.source_estimate_xy is None:
+            return "none"
+        return (
+            f"{math.hypot(self.robot_pose[0] - self.source_estimate_xy[0], self.robot_pose[1] - self.source_estimate_xy[1]):.2f}"
+        )
+
+    def _build_confirm_sampling_goal(self) -> Optional[PoseStamped]:
+        if self.source_estimate_xy is None or self.robot_pose is None:
+            return None
+        if not self.action_client.wait_for_server(timeout_sec=0.1):
+            self._publish_status("SOURCE_CONFIRM waiting_for_nav2_action_server")
+            return None
+
+        if self.confirm_sample_anchor != self.source_estimate_xy:
+            if self.confirm_sample_anchor is None or math.hypot(
+                self.confirm_sample_anchor[0] - self.source_estimate_xy[0],
+                self.confirm_sample_anchor[1] - self.source_estimate_xy[1],
+            ) > self.source_estimate_stability_radius:
+                self.confirm_sample_anchor = self.source_estimate_xy
+                self.confirm_sample_index = 0
+
+        source_x, source_y = self.source_estimate_xy
+        offsets = [
+            (0.0, 0.0),
+            (self.confirm_sampling_radius, 0.0),
+            (-self.confirm_sampling_radius, 0.0),
+            (0.0, self.confirm_sampling_radius),
+            (0.0, -self.confirm_sampling_radius),
+        ]
+
+        for _ in range(len(offsets)):
+            dx, dy = offsets[self.confirm_sample_index % len(offsets)]
+            self.confirm_sample_index += 1
+            goal_x = source_x + dx
+            goal_y = source_y + dy
+            if not self._goal_is_traversable(goal_x, goal_y):
+                continue
+            robot_x, robot_y, robot_yaw = self.robot_pose
+            return self._pose_stamped(
+                goal_x,
+                goal_y,
+                self._yaw_toward_goal(robot_x, robot_y, goal_x, goal_y, robot_yaw),
+            )
+        return None
+
+    def _pose_stamped(self, x: float, y: float, yaw: float) -> PoseStamped:
+        goal = PoseStamped()
+        goal.header.frame_id = self.goal_frame
+        goal.header.stamp = self.get_clock().now().to_msg()
+        goal.pose.position.x = x
+        goal.pose.position.y = y
+        qx, qy, qz, qw = yaw_to_quaternion(yaw)
+        goal.pose.orientation.x = qx
+        goal.pose.orientation.y = qy
+        goal.pose.orientation.z = qz
+        goal.pose.orientation.w = qw
+        return goal
 
     def _effective_source_seek_duration_sec(self) -> float:
         return min(
@@ -634,17 +1106,25 @@ class VInfoArbiter(Node):
             )
 
     def _source_reached(self) -> bool:
-        if self.robot_pose is None or self.source_estimate_xy is None:
-            return False
         if self._state_age_sec() < self.source_success_min_duration_sec:
             return False
         if self.pmax < self.pmax_success_threshold:
             return False
-        distance = math.hypot(
-            self.robot_pose[0] - self.source_estimate_xy[0],
-            self.robot_pose[1] - self.source_estimate_xy[1],
-        )
-        return distance <= self.source_reached_distance
+
+        if self.state == ControlState.SOURCE_CONFIRM:
+            if self._state_age_sec() < self.confirm_min_duration_sec:
+                return False
+            if not self._source_mass_confirmed():
+                return False
+            if self._near_source_estimate(self.source_reached_distance) and self._source_estimate_stable():
+                return True
+            return self._near_source_estimate(self.confirm_enter_distance)
+
+        if not self._near_source_estimate(self.source_reached_distance):
+            return False
+        if not self._source_estimate_stable():
+            return False
+        return False
 
     def _entropy_not_improving(self) -> bool:
         if self.entropy is None or self.source_seek_start_entropy is None:
@@ -666,14 +1146,26 @@ class VInfoArbiter(Node):
             self.source_seek_start_xy = None
             self.source_seek_duration_bonus_sec = 0.0
             self.source_seek_successful_local_goals = 0
+            self.confirm_start_source_mass = None
+            self.confirm_sample_index = 0
+            self.confirm_sample_anchor = None
             self.local_goal_result_status = None
             self.no_valid_goal_attempts = 0
             if self.robot_pose is not None:
                 self.source_seek_start_xy = (self.robot_pose[0], self.robot_pose[1])
+        elif new_state == ControlState.SOURCE_CONFIRM:
+            self._cancel_local_goal()
+            self.confirm_start_source_mass = self.source_mass
+            self.confirm_sample_index = 0
+            self.confirm_sample_anchor = None
+            self.local_goal_result_status = None
+            self.no_valid_goal_attempts = 0
         elif new_state == ControlState.PATROL:
             self._cancel_local_goal()
             self.source_seek_start_xy = None
             self.source_seek_start_entropy = None
+            self.confirm_start_source_mass = None
+            self.confirm_sample_anchor = None
             if old_state == ControlState.RECOVERY:
                 self.patrol_resume_until = self.get_clock().now() + Duration(
                     seconds=self.patrol_resume_lockout_sec
@@ -739,6 +1231,7 @@ def main(args=None):
     finally:
         node.cmd_pub.publish(Twist())
         node._cancel_local_goal()
+        node.confirm_active_pub.publish(Bool(data=False))
         node.active_pub.publish(Bool(data=False))
         node.success_pub.publish(Bool(data=node.source_reached_latched))
         node.destroy_node()

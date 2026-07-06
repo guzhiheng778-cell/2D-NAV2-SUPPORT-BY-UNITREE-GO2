@@ -6,7 +6,11 @@ v_info_arbiter:
     pmax_topic: /pmax
     entropy_topic: /entropy
     source_estimate_topic: /source_estimate
+    source_mass_topic: /source_probability_mass
+    concentration_topic: /odor_concentration
     odor_detection_topic: /odor_detection
+    patrol_active_topic: /patrol/active
+    confirm_active_topic: /source_confirm/active
     costmap_topic: /local_costmap/costmap
     robot_pose_topic: /amcl_pose
     odom_topic: /odom
@@ -18,44 +22,69 @@ v_info_arbiter:
 
     control_rate_hz: 10.0
 
-    # Your odor field is tuned so the source confidence can stay above 0.2.
-    pmax_enter_threshold: 0.0020
-    pmax_exit_threshold: 0.0015
-    pmax_drop_tolerance: 0.0050
+    # Tuned for the current probability-map scale. Patrol keeps running until
+    # source evidence is strong enough, then Nav2 local goals take over.
+    pmax_enter_threshold: 0.001
+    pmax_exit_threshold: 0.00008
+    pmax_drop_tolerance: 0.00040
 
     # Safety and freshness checks.
     v_info_timeout_sec: 0.60
     best_info_goal_timeout_sec: 2.0
+    concentration_timeout_sec: 1.0
+    patrol_active_timeout_sec: 1.5
     hit_timeout_sec: 0.0
+    require_patrol_active_before_source_seek: true
+    patrol_min_duration_before_source_seek_sec: 15.0
+    require_concentration_on_enter: true
+    concentration_enter_threshold: 0.50
 
     # Keep v_info control local and temporary, but long enough for several
     # Nav2 local goals before falling back to patrol.
     max_source_seek_duration_sec: 45.0
     max_source_seek_extended_duration_sec: 90.0
     duration_reward_per_local_goal_sec: 8.0
-    max_source_seek_distance: 2.00
-    source_reached_distance: 0.45
+    max_source_seek_distance: 6.00
+    source_reached_distance: 0.60
     source_success_min_duration_sec: 2.0
-    pmax_success_threshold: 0.0020
+    source_estimate_stability_window_sec: 3.0
+    source_estimate_stability_radius: 0.50
+    pmax_success_threshold: 0.00013
+    source_mass_success_threshold: 0.006
+    source_mass_min_gain: 0.0010
+    confirm_enter_distance: 0.70
+    confirm_min_duration_sec: 3.0
+    confirm_timeout_sec: 18.0
+    confirm_sampling_radius: 0.30
+    confirm_sampling_goal_timeout_sec: 8.0
+    enable_confirm_sampling: false
     recovery_stop_sec: 1.0
-    patrol_resume_lockout_sec: 3.0
+    patrol_resume_lockout_sec: 1.0
 
     # Engineering approximation of "information keeps improving".
     entropy_grace_sec: 10.0
     min_entropy_drop: 0.0
 
-    # Local Nav2 goal generated along the /v_info direction.
-    local_goal_distance: 0.60
-    local_goal_timeout_sec: 20.0
-    local_goal_tolerance: 0.30
+    # Use Nav2 local goals during source seeking so patrol/source-seek share the
+    # same navigation stack and obstacle handling.
+    source_seek_mode: nav2_goal
+    direct_min_linear_vel: 0.05
+    source_guided_goal_min_pmax: 0.00015
+    source_guided_goal_min_mass: 0.000
+
+    # Send source_estimate directly to Nav2 once confidence is high; otherwise
+    # fall back to /best_info_goal and /v_info exploration.
+    local_goal_distance: 0.80
+    local_goal_timeout_sec: 45.0
+    local_goal_tolerance: 0.40
     # Only reject local goals that land on a true lethal obstacle. Inflation
     # cells are left for Nav2 to handle during planning and obstacle avoidance.
     goal_cost_threshold: 100
-    goal_search_radius: 0.0
+    goal_search_radius: 0.25
     reject_unknown_goals: false
     no_valid_goal_retry_sec: 0.50
     max_no_valid_goal_attempts: 4
-    source_seek_failure_cooldown_sec: 10.0
+    source_seek_failure_cooldown_sec: 3.0
 
     # v_info is used as direction input; angular velocity is clamped when
     # projecting that direction.

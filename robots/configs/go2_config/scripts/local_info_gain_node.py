@@ -62,6 +62,7 @@ class LocalInfoGain(Node):
         self.declare_parameter("w_obstacle", 0.8)
         self.declare_parameter("w_revisit", 2.0)
         self.declare_parameter("w_turn", 0.3)
+        self.declare_parameter("w_backtrack", 0.0)
         self.declare_parameter("w_reverse_penalty", 0.20)
         self.declare_parameter("w_stop_penalty", 0.05)
         self.declare_parameter("unvisited_weight", 0.7)
@@ -90,6 +91,7 @@ class LocalInfoGain(Node):
         self.w_obstacle = float(self.get_parameter("w_obstacle").value)
         self.w_revisit = float(self.get_parameter("w_revisit").value)
         self.w_turn = float(self.get_parameter("w_turn").value)
+        self.w_backtrack = float(self.get_parameter("w_backtrack").value)
         self.w_reverse_penalty = float(self.get_parameter("w_reverse_penalty").value)
         self.w_stop_penalty = float(self.get_parameter("w_stop_penalty").value)
         self.unvisited_weight = float(self.get_parameter("unvisited_weight").value)
@@ -220,7 +222,8 @@ class LocalInfoGain(Node):
             "best={name} score={score:.3f} prob={probability:.3f} "
             "pmax_attr={pmax_attraction:.3f} unknown={unknown:.3f} "
             "unvisited={unvisited:.3f} entropy={uncertainty:.3f} "
-            "obs={obstacle:.3f} turn={turn:.3f} revisit={revisit:.3f}".format(**best)
+            "obs={obstacle:.3f} turn={turn:.3f} backtrack={backtrack:.3f} "
+            "revisit={revisit:.3f}".format(**best)
         )
 
     def _select_candidate(self, scored: List[Dict[str, float]]) -> Dict[str, float]:
@@ -304,6 +307,7 @@ class LocalInfoGain(Node):
         obstacle = self._obstacle_cost(candidate["x"], candidate["y"])
         revisit = self._revisit_penalty(candidate["x"], candidate["y"])
         turn = self._turn_penalty(candidate["heading"])
+        backtrack = self._backtrack_penalty(candidate["heading"])
         penalty = self._motion_penalty(candidate["name"])
         score = (
             self.w_probability * probability
@@ -312,6 +316,7 @@ class LocalInfoGain(Node):
             - self.w_obstacle * obstacle
             - self.w_revisit * revisit
             - self.w_turn * turn
+            - self.w_backtrack * backtrack
             - penalty
         )
 
@@ -326,6 +331,7 @@ class LocalInfoGain(Node):
                 "obstacle": obstacle,
                 "revisit": revisit,
                 "turn": turn,
+                "backtrack": backtrack,
                 "penalty": penalty,
                 "score": score,
             }
@@ -490,7 +496,9 @@ class LocalInfoGain(Node):
             if distance >= self.revisit_radius:
                 continue
             proximity = 1.0 - distance / max(1e-6, self.revisit_radius)
-            age_weight = clamp(age / max(1e-6, self.revisit_memory_sec), 0.25, 1.0)
+            active_window = max(1e-6, self.revisit_memory_sec - self.revisit_ignore_recent_sec)
+            age_weight = 1.0 - (age - self.revisit_ignore_recent_sec) / active_window
+            age_weight = clamp(age_weight, 0.20, 1.0)
             best = max(best, proximity * age_weight)
         return clamp(best, 0.0, 1.0)
 
@@ -498,6 +506,15 @@ class LocalInfoGain(Node):
         if self.last_selected_heading is None:
             return 0.0
         return abs(normalize_angle(heading - self.last_selected_heading))
+
+    def _backtrack_penalty(self, heading: float) -> float:
+        if self.last_selected_heading is None:
+            return 0.0
+        turn = abs(normalize_angle(heading - self.last_selected_heading))
+        start_penalizing = 0.60 * math.pi
+        if turn <= start_penalizing:
+            return 0.0
+        return clamp((turn - start_penalizing) / (math.pi - start_penalizing), 0.0, 1.0)
 
     def _velocity_for_candidate(self, candidate: Dict[str, float]) -> Twist:
         cmd = Twist()
