@@ -11,33 +11,34 @@ local_info_gain:
     marker_topic: /local_info_gain/markers
     control_rate_hz: 2.0
 
-    candidate_distance: 0.80
+    candidate_distance: 0.90
     candidate_radius: 0.45
-    visited_radius: 0.65
+    visited_radius: 0.80
 
     max_linear_vel: 0.18
     max_angular_vel: 0.45
     linear_gain: 0.40
-    angular_gain: 1.20
-    rotate_in_place_angle: 0.75
+    angular_gain: 0.90
+    rotate_in_place_angle: 1.20
 
     w_probability: 1.6
-    w_pmax: 2.0
-    w_unknown: 0.35
+    w_pmax: 1.7
+    w_unknown: 0.50
     w_obstacle: 0.8
-    w_revisit: 2.0
-    w_turn: 0.3
+    w_revisit: 3.5
+    w_turn: 0.45
+    w_backtrack: 1.2
     w_reverse_penalty: 0.20
     w_stop_penalty: 0.05
-    unvisited_weight: 0.7
+    unvisited_weight: 0.85
     uncertainty_weight: 0.3
 
     obstacle_lethal_threshold: 85
     obstacle_unknown_cost: 0.35
-    revisit_memory_sec: 20.0
-    revisit_radius: 0.65
-    revisit_ignore_recent_sec: 2.0
-    selection_hold_sec: 1.50
-    selection_hysteresis: 0.12
+    revisit_memory_sec: 45.0
+    revisit_radius: 0.90
+    revisit_ignore_recent_sec: 0.50
+    selection_hold_sec: 2.50
+    selection_hysteresis: 0.18
     velocity_smoothing_alpha: 0.25
     publish_zero_without_inputs: true
