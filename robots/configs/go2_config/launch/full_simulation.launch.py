@@ -39,7 +39,7 @@ def generate_launch_description():
         [go2_config_share, "config/autonomy", "probability_map.yaml"]
     )
     default_local_info_params = PathJoinSubstitution(
-        [go2_config_share, "config/autonomy", "local_info_gain.yaml"]
+        [go2_config_share, "config/autonomy", "infotaxis.yaml"]
     )
     default_rviz_config = PathJoinSubstitution(
         [FindPackageShare("champ_navigation"), "rviz", "navigation_optimized.rviz"]
@@ -79,7 +79,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "local_info_params_file",
             default_value=default_local_info_params,
-            description="Local information gain parameter YAML file",
+            description="Strict infotaxis parameter YAML file",
         ),
         DeclareLaunchArgument(
             "nav_rviz",
@@ -99,7 +99,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "local_info_gain",
             default_value="true",
-            description="Start local information gain node publishing /v_info",
+            description="Start strict infotaxis node publishing /v_info",
         ),
         DeclareLaunchArgument("world_init_x", default_value="0.0"),
         DeclareLaunchArgument("world_init_y", default_value="0.0"),

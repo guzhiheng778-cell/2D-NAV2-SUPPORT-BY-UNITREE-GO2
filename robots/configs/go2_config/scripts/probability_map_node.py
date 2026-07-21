@@ -6,10 +6,10 @@ import os
 from typing import Optional, Tuple
 
 import rclpy
-from geometry_msgs.msg import Point, PoseStamped, Vector3Stamped
+from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped, Vector3Stamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
-from std_msgs.msg import Bool, ColorRGBA, Float32
+from std_msgs.msg import Bool, ColorRGBA, Float32, Float32MultiArray, MultiArrayDimension
 from visualization_msgs.msg import Marker, MarkerArray
 
 
@@ -18,10 +18,13 @@ class ProbabilityMap(Node):
         super().__init__("probability_map")
 
         self.declare_parameter("frame_id", "map")
+        self.declare_parameter("robot_pose_topic", "/amcl_pose")
         self.declare_parameter("odom_topic", "/odom")
+        self.declare_parameter("allow_odom_pose_fallback", False)
         self.declare_parameter("wind_topic", "/wind_vector")
         self.declare_parameter("detection_topic", "/odor_detection")
         self.declare_parameter("probability_grid_topic", "/probability_grid")
+        self.declare_parameter("probability_array_topic", "/probability_values")
         self.declare_parameter("entropy_topic", "/entropy")
         self.declare_parameter("pmax_topic", "/pmax")
         self.declare_parameter("source_estimate_topic", "/source_estimate")
@@ -36,6 +39,7 @@ class ProbabilityMap(Node):
         self.declare_parameter("publish_rate_hz", 2.0)
         self.declare_parameter("min_update_distance", 0.15)
         self.declare_parameter("min_update_interval_sec", 0.50)
+        self.declare_parameter("allow_stationary_updates", True)
         self.declare_parameter("release_rate", 8.0)
         self.declare_parameter("plume_sigma_y_base", 0.20)
         self.declare_parameter("plume_sigma_y_gain", 0.22)
@@ -49,6 +53,9 @@ class ProbabilityMap(Node):
         self.declare_parameter("likelihood_temperature", 0.12)
 
         self.frame_id = self.get_parameter("frame_id").value
+        self.allow_odom_pose_fallback = bool(
+            self.get_parameter("allow_odom_pose_fallback").value
+        )
         self.map_min_x = float(self.get_parameter("map_min_x").value)
         self.map_max_x = float(self.get_parameter("map_max_x").value)
         self.map_min_y = float(self.get_parameter("map_min_y").value)
@@ -56,6 +63,7 @@ class ProbabilityMap(Node):
         self.resolution = float(self.get_parameter("resolution").value)
         self.min_update_distance = float(self.get_parameter("min_update_distance").value)
         self.min_update_interval_sec = float(self.get_parameter("min_update_interval_sec").value)
+        self.allow_stationary_updates = bool(self.get_parameter("allow_stationary_updates").value)
         self.release_rate = float(self.get_parameter("release_rate").value)
         self.sigma_y_base = float(self.get_parameter("plume_sigma_y_base").value)
         self.sigma_y_gain = float(self.get_parameter("plume_sigma_y_gain").value)
@@ -78,6 +86,7 @@ class ProbabilityMap(Node):
         self.probabilities = [1.0 / self.cell_count] * self.cell_count
 
         self.robot_xy: Optional[Tuple[float, float]] = None
+        self.has_map_pose = False
         self.wind_xy = (1.0, 0.0)
         self.last_update_xy: Optional[Tuple[float, float]] = None
         self.last_update_time = None
@@ -86,6 +95,9 @@ class ProbabilityMap(Node):
 
         self.grid_pub = self.create_publisher(
             OccupancyGrid, self.get_parameter("probability_grid_topic").value, 1
+        )
+        self.array_pub = self.create_publisher(
+            Float32MultiArray, self.get_parameter("probability_array_topic").value, 1
         )
         self.entropy_pub = self.create_publisher(
             Float32, self.get_parameter("entropy_topic").value, 10
@@ -100,6 +112,12 @@ class ProbabilityMap(Node):
             MarkerArray, self.get_parameter("marker_topic").value, 10
         )
 
+        self.create_subscription(
+            PoseWithCovarianceStamped,
+            self.get_parameter("robot_pose_topic").value,
+            self._pose_callback,
+            10,
+        )
         self.create_subscription(
             Odometry, self.get_parameter("odom_topic").value, self._odom_callback, 20
         )
@@ -117,7 +135,13 @@ class ProbabilityMap(Node):
             f"Probability map ready: {self.width}x{self.height}, resolution={self.resolution:.2f} m"
         )
 
+    def _pose_callback(self, msg: PoseWithCovarianceStamped):
+        self.has_map_pose = True
+        self.robot_xy = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+
     def _odom_callback(self, msg: Odometry):
+        if self.has_map_pose or not self.allow_odom_pose_fallback:
+            return
         self.robot_xy = (msg.pose.pose.position.x, msg.pose.pose.position.y)
 
     def _wind_callback(self, msg: Vector3Stamped):
@@ -146,7 +170,9 @@ class ProbabilityMap(Node):
             return True
         dx = self.robot_xy[0] - self.last_update_xy[0]
         dy = self.robot_xy[1] - self.last_update_xy[1]
-        return math.hypot(dx, dy) >= self.min_update_distance
+        if math.hypot(dx, dy) >= self.min_update_distance:
+            return True
+        return self.allow_stationary_updates
 
     def _bayes_update(self, detected: bool):
         updated = []
@@ -203,6 +229,7 @@ class ProbabilityMap(Node):
         self.pmax_pub.publish(Float32(data=float(pmax)))
         self.source_pub.publish(self._source_pose(now, source_x, source_y))
         self.grid_pub.publish(self._probability_grid(now, pmax))
+        self.array_pub.publish(self._probability_array())
         self.marker_pub.publish(self._markers(now, pmax, source_x, source_y))
 
     def _entropy(self) -> float:
@@ -263,6 +290,15 @@ class ProbabilityMap(Node):
             max(0, min(100, int(round(100.0 * probability / scale))))
             for probability in self.probabilities
         ]
+        return msg
+
+    def _probability_array(self) -> Float32MultiArray:
+        msg = Float32MultiArray()
+        msg.layout.dim = [
+            MultiArrayDimension(label="height", size=self.height, stride=self.cell_count),
+            MultiArrayDimension(label="width", size=self.width, stride=self.width),
+        ]
+        msg.data = [float(probability) for probability in self.probabilities]
         return msg
 
     def _cell_center(self, index: int) -> Tuple[float, float]:

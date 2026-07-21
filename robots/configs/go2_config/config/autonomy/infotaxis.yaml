@@ -1,0 +1,42 @@
+infotaxis:
+  ros__parameters:
+    robot_pose_topic: /amcl_pose
+    odom_topic: /odom
+    allow_odom_pose_fallback: false
+    probability_grid_topic: /probability_grid
+    probability_array_topic: /probability_values
+    wind_topic: /wind_vector
+    costmap_topic: /local_costmap/costmap
+    velocity_topic: /v_info
+    best_goal_topic: /best_info_goal
+    status_topic: /infotaxis/status
+    marker_topic: /infotaxis/markers
+    control_rate_hz: 2.0
+
+    candidate_distance: 0.90
+    candidate_distances: [0.90, 0.65, 0.40]
+    candidate_yaw_offsets: [0.0, 0.785398, -0.785398, 1.570796, -1.570796, 3.141593]
+    include_stay_candidate: false
+    candidate_radius: 0.08
+
+    max_linear_vel: 0.18
+    max_angular_vel: 0.45
+    angular_gain: 0.90
+    rotate_in_place_angle: 1.20
+    velocity_smoothing_alpha: 0.25
+    publish_zero_without_inputs: true
+
+    release_rate: 8.0
+    plume_sigma_y_base: 0.20
+    plume_sigma_y_gain: 0.22
+    plume_sigma_z_base: 0.20
+    plume_sigma_z_gain: 0.12
+    sensor_height: 0.25
+    source_height: 0.2
+    detection_threshold: 0.18
+    likelihood_temperature: 0.12
+
+    obstacle_lethal_threshold: 100
+    obstacle_unknown_cost: 0.35
+    reject_unknown_goals: false
+    invalid_candidate_delta: -1000000000.0

@@ -7,14 +7,14 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     default_params_file = PathJoinSubstitution(
-        [FindPackageShare("go2_config"), "config/autonomy", "local_info_gain.yaml"]
+        [FindPackageShare("go2_config"), "config/autonomy", "infotaxis.yaml"]
     )
 
     return LaunchDescription([
         DeclareLaunchArgument(
             "params_file",
             default_value=default_params_file,
-            description="YAML file containing local information gain parameters",
+            description="YAML file containing strict infotaxis parameters",
         ),
         DeclareLaunchArgument(
             "use_sim_time",
@@ -23,8 +23,8 @@ def generate_launch_description():
         ),
         Node(
             package="go2_config",
-            executable="local_info_gain_node.py",
-            name="local_info_gain",
+            executable="infotaxis_node.py",
+            name="infotaxis",
             output="screen",
             parameters=[
                 LaunchConfiguration("params_file"),

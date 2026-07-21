@@ -1,10 +1,13 @@
 probability_map:
   ros__parameters:
     frame_id: map
+    robot_pose_topic: /amcl_pose
     odom_topic: /odom
+    allow_odom_pose_fallback: false
     wind_topic: /wind_vector
     detection_topic: /odor_detection
     probability_grid_topic: /probability_grid
+    probability_array_topic: /probability_values
     entropy_topic: /entropy
     pmax_topic: /pmax
     source_estimate_topic: /source_estimate
@@ -19,6 +22,7 @@ probability_map:
     publish_rate_hz: 2.0
     min_update_distance: 0.15
     min_update_interval_sec: 0.50
+    allow_stationary_updates: false
     release_rate: 8.0
     plume_sigma_y_base: 0.20
     plume_sigma_y_gain: 0.22

@@ -6,6 +6,7 @@ find_package(ament_cmake REQUIRED)
 install(
   PROGRAMS
     scripts/odor_simulator_node.py
+    scripts/infotaxis_node.py
     scripts/local_info_gain_node.py
     scripts/patrol_manager_node.py
     scripts/probability_map_node.py
