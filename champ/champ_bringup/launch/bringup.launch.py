@@ -140,6 +140,12 @@ def generate_launch_description():
         "close_loop_odom", default_value="false", description=""
     )
 
+    declare_cmd_vel_topic = DeclareLaunchArgument(
+        "cmd_vel_topic",
+        default_value="/cmd_vel",
+        description="Velocity command topic consumed by the quadruped controller",
+    )
+
     description_ld = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -170,7 +176,7 @@ def generate_launch_description():
             LaunchConfiguration('links_map_path'),
             LaunchConfiguration('gait_config_path'),
         ],
-        remappings=[("/cmd_vel/smooth", "/cmd_vel")],
+        remappings=[("/cmd_vel/smooth", LaunchConfiguration("cmd_vel_topic"))],
     )
 
     state_estimator_node = Node(
@@ -255,6 +261,7 @@ def generate_launch_description():
             declare_publish_foot_contacts,
             declare_publish_odom_tf,
             declare_close_loop_odom,
+            declare_cmd_vel_topic,
             description_ld,
             quadruped_controller_node,
             state_estimator_node,

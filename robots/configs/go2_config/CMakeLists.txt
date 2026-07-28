@@ -17,6 +17,12 @@ install(
 )
 
 install(
+  FILES
+    scripts/binary_observation_model.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
   DIRECTORY launch config maps worlds
   DESTINATION share/${PROJECT_NAME}
 )

@@ -45,7 +45,8 @@ class VInfoArbiter(Node):
 
         self.declare_parameter("v_info_topic", "/v_info")
         self.declare_parameter("best_info_goal_topic", "/best_info_goal")
-        self.declare_parameter("cmd_vel_topic", "/cmd_vel")
+        self.declare_parameter("direct_cmd_vel_topic", "/cmd_vel_infotaxis")
+        self.declare_parameter("stop_cmd_vel_topic", "/cmd_vel_stop")
         self.declare_parameter("pmax_topic", "/pmax")
         self.declare_parameter("entropy_topic", "/entropy")
         self.declare_parameter("source_estimate_topic", "/source_estimate")
@@ -281,7 +282,12 @@ class VInfoArbiter(Node):
         self.transform_cache = {}
         self.last_goal_invalid_reason = "none"
 
-        self.cmd_pub = self.create_publisher(Twist, self.get_parameter("cmd_vel_topic").value, 10)
+        self.direct_cmd_pub = self.create_publisher(
+            Twist, self.get_parameter("direct_cmd_vel_topic").value, 10
+        )
+        self.stop_cmd_pub = self.create_publisher(
+            Twist, self.get_parameter("stop_cmd_vel_topic").value, 10
+        )
         self.confirm_active_pub = self.create_publisher(
             Bool, self.get_parameter("confirm_active_topic").value, 10
         )
@@ -438,20 +444,20 @@ class VInfoArbiter(Node):
     def _tick_patrol(self):
         if self._can_enter_source_seek():
             self._enter_state(ControlState.SOURCE_SEEK, "pmax_high_and_v_info_safe")
-            self.cmd_pub.publish(Twist())
+            self._publish_stop()
             return
         self._publish_status(f"PATROL nav2_active blocked_by={self._entry_block_reason()}")
 
     def _tick_source_seek(self):
         if self._ready_for_source_confirm():
             self._enter_state(ControlState.SOURCE_CONFIRM, "source_confirm_ready")
-            self.cmd_pub.publish(Twist())
+            self._publish_stop()
             return
 
         exit_reason = self._source_seek_exit_reason()
         if exit_reason:
             self._enter_state(ControlState.RECOVERY, exit_reason)
-            self.cmd_pub.publish(Twist())
+            self._publish_stop()
             return
 
         self.source_seek_peak_pmax = max(self.source_seek_peak_pmax, self.pmax)
@@ -459,7 +465,7 @@ class VInfoArbiter(Node):
         if self.source_seek_mode == "direct_v_info":
             self._cancel_local_goal()
             cmd = self._direct_v_info_cmd()
-            self.cmd_pub.publish(cmd)
+            self.direct_cmd_pub.publish(cmd)
             self._publish_status(
                 "SOURCE_SEEK direct_v_info "
                 f"pmax={self.pmax:.6f} "
@@ -488,7 +494,7 @@ class VInfoArbiter(Node):
                 self._reward_source_seek_duration()
                 if self._ready_for_source_confirm():
                     self._enter_state(ControlState.SOURCE_CONFIRM, "source_confirm_after_local_goal")
-                    self.cmd_pub.publish(Twist())
+                    self._publish_stop()
                     return
                 self._publish_status(
                     "SOURCE_SEEK local_goal_reached recalculating "
@@ -497,7 +503,7 @@ class VInfoArbiter(Node):
                 )
             else:
                 self._enter_state(ControlState.RECOVERY, f"local_goal_failed_status_{status}")
-                self.cmd_pub.publish(Twist())
+                self._publish_stop()
                 return
 
         if self._waiting_to_retry_local_goal():
@@ -512,7 +518,7 @@ class VInfoArbiter(Node):
                     ControlState.RECOVERY,
                     f"no_valid_local_nav2_goal_limit_{self.no_valid_goal_attempts}",
                 )
-                self.cmd_pub.publish(Twist())
+                self._publish_stop()
                 return
             self.last_no_valid_goal_time = self.get_clock().now()
             self._publish_status(
@@ -527,7 +533,8 @@ class VInfoArbiter(Node):
         self._send_local_goal(goal)
 
     def _tick_source_confirm(self):
-        self.cmd_pub.publish(Twist())
+        if not self.enable_confirm_sampling:
+            self._publish_stop()
 
         if self._source_confirm_retargeted():
             shift = self._confirm_source_shift()
@@ -585,12 +592,13 @@ class VInfoArbiter(Node):
 
         goal = self._build_confirm_sampling_goal()
         if goal is None:
+            self._publish_stop()
             self._publish_status("SOURCE_CONFIRM no_valid_sampling_goal")
             return
         self._send_confirm_sampling_goal(goal)
 
     def _tick_recovery(self):
-        self.cmd_pub.publish(Twist())
+        self._publish_stop()
         if self._state_age_sec() >= self.recovery_stop_sec:
             self._enter_state(ControlState.PATROL, "recovery_complete")
             return
@@ -1374,20 +1382,27 @@ class VInfoArbiter(Node):
     def _publish_status(self, text: str):
         self.status_pub.publish(String(data=text))
 
+    def _publish_stop(self):
+        self.stop_cmd_pub.publish(Twist())
+
 
 def main(args=None):
     rclpy.init(args=args)
     node = VInfoArbiter()
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
-        node.cmd_pub.publish(Twist())
-        node._cancel_local_goal()
-        node.confirm_active_pub.publish(Bool(data=False))
-        node.active_pub.publish(Bool(data=False))
-        node.success_pub.publish(Bool(data=node.source_reached_latched))
+        if rclpy.ok():
+            node._publish_stop()
+            node._cancel_local_goal()
+            node.confirm_active_pub.publish(Bool(data=False))
+            node.active_pub.publish(Bool(data=False))
+            node.success_pub.publish(Bool(data=node.source_reached_latched))
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

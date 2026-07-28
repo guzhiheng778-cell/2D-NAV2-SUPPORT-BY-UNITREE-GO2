@@ -13,6 +13,8 @@ from std_msgs.msg import ColorRGBA, Float32MultiArray, String
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
+from binary_observation_model import observation_probabilities, validate_error_rates
+
 
 def clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
@@ -79,6 +81,8 @@ class Infotaxis(Node):
         self.declare_parameter("source_height", 0.2)
         self.declare_parameter("detection_threshold", 0.18)
         self.declare_parameter("likelihood_temperature", 0.12)
+        self.declare_parameter("false_positive_rate", 0.05)
+        self.declare_parameter("false_negative_rate", 0.05)
 
         self.declare_parameter("obstacle_lethal_threshold", 85)
         self.declare_parameter("obstacle_unknown_cost", 0.35)
@@ -123,6 +127,13 @@ class Infotaxis(Node):
         self.likelihood_temperature = max(
             1e-3, float(self.get_parameter("likelihood_temperature").value)
         )
+        self.false_positive_rate = float(
+            self.get_parameter("false_positive_rate").value
+        )
+        self.false_negative_rate = float(
+            self.get_parameter("false_negative_rate").value
+        )
+        validate_error_rates(self.false_positive_rate, self.false_negative_rate)
         self.obstacle_lethal_threshold = int(
             self.get_parameter("obstacle_lethal_threshold").value
         )
@@ -188,7 +199,8 @@ class Infotaxis(Node):
         rate = max(0.5, float(self.get_parameter("control_rate_hz").value))
         self.timer = self.create_timer(1.0 / rate, self._tick)
         self.get_logger().info(
-            "Strict infotaxis ready: selecting candidate with maximum expected entropy drop"
+            "Strict infotaxis ready: selecting candidate with maximum expected entropy drop; "
+            f"FPR={self.false_positive_rate:.3f}, FNR={self.false_negative_rate:.3f}"
         )
 
     def _pose_callback(self, msg: PoseWithCovarianceStamped):
@@ -359,10 +371,9 @@ class Infotaxis(Node):
 
         for index, prior in enumerate(posterior):
             source_x, source_y = self._cell_center(index)
-            hit_probability = self._hit_probability(
+            hit_probability, void_probability = self._observation_probabilities(
                 source_x, source_y, candidate["x"], candidate["y"]
             )
-            void_probability = 1.0 - hit_probability
             hit_likelihoods.append(hit_probability)
             void_likelihoods.append(void_probability)
             p_hit += prior * hit_probability
@@ -391,18 +402,23 @@ class Infotaxis(Node):
         )
         return result
 
-    def _hit_probability(
+    def _observation_probabilities(
         self,
         source_x: float,
         source_y: float,
         observer_x: float,
         observer_y: float,
-    ) -> float:
+    ) -> Tuple[float, float]:
         concentration = self._expected_concentration(
             source_x, source_y, observer_x, observer_y
         )
-        exponent = -(concentration - self.detection_threshold) / self.likelihood_temperature
-        return 1.0 / (1.0 + math.exp(clamp(exponent, -60.0, 60.0)))
+        return observation_probabilities(
+            concentration,
+            self.detection_threshold,
+            self.likelihood_temperature,
+            self.false_positive_rate,
+            self.false_negative_rate,
+        )
 
     def _expected_concentration(
         self,

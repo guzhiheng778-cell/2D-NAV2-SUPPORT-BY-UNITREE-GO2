@@ -12,6 +12,8 @@ from rclpy.node import Node
 from std_msgs.msg import Bool, ColorRGBA, Float32, Float32MultiArray, MultiArrayDimension
 from visualization_msgs.msg import Marker, MarkerArray
 
+from binary_observation_model import observation_probabilities, validate_error_rates
+
 
 class ProbabilityMap(Node):
     def __init__(self):
@@ -48,9 +50,9 @@ class ProbabilityMap(Node):
         self.declare_parameter("sensor_height", 0.25)
         self.declare_parameter("source_height", 0.2)
         self.declare_parameter("detection_threshold", 0.18)
-        self.declare_parameter("hit_likelihood_floor", 0.05)
-        self.declare_parameter("void_likelihood_floor", 0.05)
         self.declare_parameter("likelihood_temperature", 0.12)
+        self.declare_parameter("false_positive_rate", 0.05)
+        self.declare_parameter("false_negative_rate", 0.05)
 
         self.frame_id = self.get_parameter("frame_id").value
         self.allow_odom_pose_fallback = bool(
@@ -72,11 +74,16 @@ class ProbabilityMap(Node):
         self.sensor_height = float(self.get_parameter("sensor_height").value)
         self.source_height = float(self.get_parameter("source_height").value)
         self.detection_threshold = float(self.get_parameter("detection_threshold").value)
-        self.hit_likelihood_floor = float(self.get_parameter("hit_likelihood_floor").value)
-        self.void_likelihood_floor = float(self.get_parameter("void_likelihood_floor").value)
         self.likelihood_temperature = max(
             1e-3, float(self.get_parameter("likelihood_temperature").value)
         )
+        self.false_positive_rate = float(
+            self.get_parameter("false_positive_rate").value
+        )
+        self.false_negative_rate = float(
+            self.get_parameter("false_negative_rate").value
+        )
+        validate_error_rates(self.false_positive_rate, self.false_negative_rate)
         self.csv_output_file = self.get_parameter("csv_output_file").value
         self.source_estimate_top_k = max(1, int(self.get_parameter("source_estimate_top_k").value))
 
@@ -132,7 +139,9 @@ class ProbabilityMap(Node):
         self.timer = self.create_timer(1.0 / publish_rate_hz, self._publish_outputs)
         self._init_csv()
         self.get_logger().info(
-            f"Probability map ready: {self.width}x{self.height}, resolution={self.resolution:.2f} m"
+            f"Probability map ready: {self.width}x{self.height}, "
+            f"resolution={self.resolution:.2f} m, "
+            f"FPR={self.false_positive_rate:.3f}, FNR={self.false_negative_rate:.3f}"
         )
 
     def _pose_callback(self, msg: PoseWithCovarianceStamped):
@@ -178,12 +187,8 @@ class ProbabilityMap(Node):
         updated = []
         for index, prior in enumerate(self.probabilities):
             source_x, source_y = self._cell_center(index)
-            p_hit = self._hit_probability(source_x, source_y)
-            likelihood = p_hit if detected else (1.0 - p_hit)
-            if detected:
-                likelihood = max(self.hit_likelihood_floor, likelihood)
-            else:
-                likelihood = max(self.void_likelihood_floor, likelihood)
+            p_hit, p_void = self._observation_probabilities(source_x, source_y)
+            likelihood = p_hit if detected else p_void
             updated.append(prior * likelihood)
 
         total = sum(updated)
@@ -193,9 +198,17 @@ class ProbabilityMap(Node):
             return
         self.probabilities = [value / total for value in updated]
 
-    def _hit_probability(self, source_x: float, source_y: float) -> float:
+    def _observation_probabilities(
+        self, source_x: float, source_y: float
+    ) -> Tuple[float, float]:
         concentration = self._expected_concentration(source_x, source_y)
-        return 1.0 / (1.0 + math.exp(-(concentration - self.detection_threshold) / self.likelihood_temperature))
+        return observation_probabilities(
+            concentration,
+            self.detection_threshold,
+            self.likelihood_temperature,
+            self.false_positive_rate,
+            self.false_negative_rate,
+        )
 
     def _expected_concentration(self, source_x: float, source_y: float) -> float:
         robot_x, robot_y = self.robot_xy

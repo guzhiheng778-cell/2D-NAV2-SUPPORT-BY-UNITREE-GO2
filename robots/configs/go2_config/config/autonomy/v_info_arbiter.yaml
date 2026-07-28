@@ -2,7 +2,8 @@ v_info_arbiter:
   ros__parameters:
     v_info_topic: /v_info
     best_info_goal_topic: /best_info_goal
-    cmd_vel_topic: /cmd_vel
+    direct_cmd_vel_topic: /cmd_vel_infotaxis
+    stop_cmd_vel_topic: /cmd_vel_stop
     pmax_topic: /pmax
     entropy_topic: /entropy
     source_estimate_topic: /source_estimate
@@ -25,7 +26,7 @@ v_info_arbiter:
     # Tuned for the current probability-map scale. Patrol keeps running until
     # source evidence is strong enough, then Nav2 local goals take over.
     pmax_enter_threshold: 0.001
-    pmax_exit_threshold: 0.00008
+    pmax_exit_threshold: 0.00007
     enable_pmax_drop_exit: false
     pmax_drop_tolerance: 0.00040
 
@@ -53,7 +54,7 @@ v_info_arbiter:
     source_estimate_stability_window_sec: 3.0
     source_estimate_stability_radius: 0.50
     source_confirm_retarget_distance: 0.50
-    pmax_success_threshold: 0.00013
+    pmax_success_threshold: 0.002
     confirm_enter_distance: 0.70
     confirm_min_duration_sec: 3.0
     confirm_timeout_sec: 18.0

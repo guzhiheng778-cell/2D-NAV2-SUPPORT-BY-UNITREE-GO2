@@ -34,6 +34,9 @@ def generate_launch_description():
     bringup_launch_path = PathJoinSubstitution(
         [FindPackageShare('champ_bringup'), 'launch', 'bringup.launch.py']
     )
+    velocity_mux_launch_path = PathJoinSubstitution(
+        [this_package, 'launch', 'velocity_mux.launch.py']
+    )
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -70,10 +73,18 @@ def generate_launch_description():
                 "hardware_connected": LaunchConfiguration("hardware_connected"),
                 "publish_foot_contacts": "true",
                 "close_loop_odom": "true",
+                "cmd_vel_topic": "/cmd_vel_mux",
                 "joint_controller_topic": "joint_group_effort_controller/joint_trajectory",
                 "joints_map_path": joints_config,
                 "links_map_path": links_config,
                 "gait_config_path": gait_config
             }.items(),
-        )
+        ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(velocity_mux_launch_path),
+            launch_arguments={
+                "use_sim_time": LaunchConfiguration("sim"),
+                "output_topic": "/cmd_vel_mux",
+            }.items(),
+        ),
     ])

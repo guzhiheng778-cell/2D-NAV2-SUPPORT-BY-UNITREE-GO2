@@ -1,0 +1,15 @@
+twist_mux:
+  ros__parameters:
+    topics:
+      navigation:
+        topic: /cmd_vel
+        timeout: 0.5
+        priority: 10
+      infotaxis_direct:
+        topic: /cmd_vel_infotaxis
+        timeout: 0.3
+        priority: 50
+      safety_stop:
+        topic: /cmd_vel_stop
+        timeout: 0.3
+        priority: 100

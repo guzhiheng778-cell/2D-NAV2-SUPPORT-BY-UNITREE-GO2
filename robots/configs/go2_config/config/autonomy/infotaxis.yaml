@@ -35,6 +35,8 @@ infotaxis:
     source_height: 0.2
     detection_threshold: 0.18
     likelihood_temperature: 0.12
+    false_positive_rate: 0.05
+    false_negative_rate: 0.05
 
     obstacle_lethal_threshold: 100
     obstacle_unknown_cost: 0.35

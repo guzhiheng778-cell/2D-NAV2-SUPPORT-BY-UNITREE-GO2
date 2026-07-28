@@ -35,6 +35,9 @@ def generate_launch_description():
     links_config = os.path.join(config_pkg_share, "config/links/links.yaml")
     default_model_path = os.path.join(descr_pkg_share, "xacro/robot.xacro")
     default_world_path = os.path.join(config_pkg_share, "worlds/outdoor.world")
+    velocity_mux_launch_path = os.path.join(
+        config_pkg_share, "launch", "velocity_mux.launch.py"
+    )
 
     declare_use_sim_time = DeclareLaunchArgument(
         "use_sim_time",
@@ -92,6 +95,15 @@ def generate_launch_description():
             "hardware_connected": "false",
             "publish_foot_contacts": "false",
             "close_loop_odom": "true",
+            "cmd_vel_topic": "/cmd_vel_mux",
+        }.items(),
+    )
+
+    velocity_mux_ld = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(velocity_mux_launch_path),
+        launch_arguments={
+            "use_sim_time": LaunchConfiguration("use_sim_time"),
+            "output_topic": "/cmd_vel_mux",
         }.items(),
     )
 
@@ -131,6 +143,7 @@ def generate_launch_description():
             declare_world_init_z,
             declare_world_init_heading,
             bringup_ld,
+            velocity_mux_ld,
             gazebo_ld
 
         ]
